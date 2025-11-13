@@ -18,7 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
+#include <stdlib.h>
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -31,6 +31,23 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define RF_FREQUENCY        922100000 // Hz
+#define TX_OUTPUT_POWER     14        // dBm
+
+#define LORA_BANDWIDTH      0         // 0: 125 kHz
+#define LORA_SPREADING_FACTOR 7       // SF7
+#define LORA_CODINGRATE     1         // 4/5
+
+#define LORA_PREAMBLE_LENGTH 8
+#define LORA_SYMBOL_TIMEOUT  0
+#define LORA_FIX_LENGTH_PAYLOAD_ON false
+#define LORA_IQ_INVERSION_ON false
+
+#define RX_TIMEOUT_VALUE    1000
+#define BUFFER_SIZE         64
+
+#define Rx_ID               20
+#define PHYMAC_PDUOFFSET_RXID 0
 
 /* USER CODE END PD */
 
@@ -44,6 +61,38 @@ TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart2;
 
+// motor move valuable
+int current_angle = 0;
+int Lavender_angle = 0;
+int Cedarwood_angle = 90;
+int Vanilla_angle = 180;
+int Bergamot_angle = 270;
+int move_angle = 0;
+
+// lora valuable
+uint16_t BufferSize = BUFFER_SIZE;
+uint8_t Buffer[BUFFER_SIZE];
+
+int8_t RssiValue = 0;
+int8_t SnrValue = 0;
+
+static RadioEvents_t RadioEvents;
+
+volatile uint8_t lora_ok_flag = 0; // check OK message
+volatile uint8_t lora_wait_flag = 0; // check wait
+
+typedef enum {
+    LOWPOWER = 0,
+    IDLE,
+    RX,
+    RX_TIMEOUT,
+    RX_ERROR,
+    TX,
+    TX_TIMEOUT
+} States_t;
+
+volatile States_t State = RX;
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -53,8 +102,16 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
+
+// lora function prototype
+void OnTxDone( void );
+void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr );
+void OnTxTimeout( void );
+void OnRxTimeout( void );
+void OnRxError( void );
+
 /* USER CODE BEGIN PFP */
-// Define the GPIO pins connected to IN1, IN2, IN3, IN4
+// Define the GPIO pins connected to IN1, IN2, IN3, IN4(Step motor)
 #define IN1_PORT GPIOA
 #define IN1_PIN  GPIO_PIN_5
 #define IN2_PORT GPIOA
@@ -63,6 +120,16 @@ static void MX_TIM2_Init(void);
 #define IN3_PIN  GPIO_PIN_7
 #define IN4_PORT GPIOB
 #define IN4_PIN  GPIO_PIN_6
+
+// limit switch
+#define LIMIT_SWITCH_PORT GPIOA
+#define LIMIT_SWITCH_PIN  GPIO_PIN_0
+
+int __io_putchar(int ch) {
+	HAL_UART_Transmit(&huart2, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
+	return ch;
+}
+
 
 // Half-Step Sequence (8 steps)
 const uint8_t half_step_sequence[8][4] = {
@@ -80,8 +147,8 @@ const uint8_t half_step_sequence[8][4] = {
 // [핵심 수정] IN2와 IN3의 출력 순서를 바꿈 (b와 c 위치 변경)
 void SetMotorPins(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
     HAL_GPIO_WritePin(IN1_PORT, IN1_PIN, (GPIO_PinState)a); // IN1 <- a
-    HAL_GPIO_WritePin(IN3_PORT, IN3_PIN, (GPIO_PinState)c); // IN3 <- c (원래 b였던 입력이 IN3으로)
     HAL_GPIO_WritePin(IN2_PORT, IN2_PIN, (GPIO_PinState)b); // IN2 <- b (원래 c였던 입력이 IN2로)
+    HAL_GPIO_WritePin(IN3_PORT, IN3_PIN, (GPIO_PinState)c); // IN3 <- c (원래 b였던 입력이 IN3으로)
     HAL_GPIO_WritePin(IN4_PORT, IN4_PIN, (GPIO_PinState)d); // IN4 <- d
 }
 
@@ -109,6 +176,192 @@ void MoveMotorSteps(int steps, int delay_ms) {
         HAL_Delay(delay_ms);
     }
 }
+/*
+void ResetMotor(){
+	while(HAL_GPIO_ReadPin(LIMIT_SWITCH_PORT, LIMIT_SWITCH_PIN)){
+		MoveMotorSteps(-1, 3);
+	}
+	MoveMotorSteps(5, 3);
+
+	SetMotorPins(
+			half_step_sequence[0][0],
+	        half_step_sequence[0][1],
+	        half_step_sequence[0][2],
+	        half_step_sequence[0][3]);
+
+	current_angle = 0;
+
+	// 완료 통신할 것인지?
+}
+*/
+
+void OnTxDone(void)
+{
+    Radio.Sleep();
+    State = RX;  // 자동으로 RX 모드 진입
+}
+
+void OnTxTimeout( void )
+{
+    Radio.Sleep( );
+    State = TX;
+    printf( "> OnTxTimeout\n");
+}
+
+void OnRxTimeout( void )
+{
+    Radio.Sleep( );
+    Buffer[BufferSize] = 0;
+    State = RX;
+    printf( "> OnRxTimeout\n");
+}
+
+void OnRxError( void )
+{
+    Radio.Sleep( );
+    State = RX;
+    printf( "> OnRxError\n");
+}
+
+
+// wait OK message
+void WaitForLoRaOK_Blocking()
+{
+    lora_ok_flag = 0;
+    lora_wait_flag = 1;
+
+    // LoRa 수신 시작
+    State = RX;
+
+    // OK가 들어올 때까지 Blocking
+    while (lora_ok_flag == 0)
+    {
+        // State machine 유지
+        switch (State)
+        {
+            case RX:
+                Radio.Rx(RX_TIMEOUT_VALUE);
+                State = IDLE;
+                break;
+
+            case TX:
+                HAL_Delay(100);
+                State = IDLE;
+                break;
+        }
+
+        HAL_Delay(5);
+    }
+
+    // OK 받음 -> 종료
+    lora_wait_flag = 0;
+}
+
+void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
+{
+    uint8_t dataIndFlag = 0;
+
+    Radio.Sleep();
+    BufferSize = size;
+    memcpy(Buffer, payload, BufferSize);
+    RssiValue = rssi;
+    SnrValue = snr;
+    State = RX;
+
+    if (Buffer[PHYMAC_PDUOFFSET_RXID] == Rx_ID) {
+        dataIndFlag = 1;
+    }
+
+    if (dataIndFlag){
+        printf("pong: ");
+        for (int i = 1; i < BufferSize; i++) {
+            printf("%c", payload[i]);
+        }
+        printf("\n\r");
+    }
+
+    // ✔ OK 메시지 감지
+    if (strstr((char *)(payload + 1), "OK") != NULL) {
+        lora_ok_flag = 1;  // OK 수신
+    }
+}
+
+
+
+
+
+
+// home(angle = 0)
+void LavenderMove(){
+	move_angle = Lavender_angle - current_angle;
+	if(move_angle > 180) move_angle -= 360;
+	if(move_angle < -180) move_angle += 360;
+
+	MoveMotorSteps(1024*move_angle/90, 2);
+	current_angle = (current_angle + move_angle + 360) % 360;
+
+	// Send a ready message
+	Buffer[0] = Rx_ID;
+	strcpy((char*)Buffer + 1, "LAVENDER_READY");
+	Radio.Send(Buffer, BufferSize);
+
+	// wait ok msseage
+	WaitForLoRaOK_Blocking();
+}
+
+void CedarwoodMove(){
+	move_angle = Cedarwood_angle - current_angle;
+	if(move_angle > 180) move_angle -= 360;
+	if(move_angle < -180) move_angle += 360;
+	MoveMotorSteps(1024*move_angle/90, 2);
+	current_angle = (current_angle + move_angle + 360) % 360;
+
+	// Send a ready message
+	Buffer[0] = Rx_ID;
+	strcpy((char*)Buffer + 1, "CEDARWOOD_READY");
+	Radio.Send(Buffer, BufferSize);
+
+	// wait ok msseage
+	WaitForLoRaOK_Blocking();
+}
+
+void VanillaMove(){
+	move_angle = Vanilla_angle - current_angle;
+	if(move_angle > 180) move_angle -= 360;
+	if(move_angle < -180) move_angle += 360;
+	MoveMotorSteps(1024*move_angle/90, 2);
+	current_angle = (current_angle + move_angle + 360) % 360;
+
+	// Send a ready message
+	Buffer[0] = Rx_ID;
+	strcpy((char*)Buffer + 1, "VANILLA_READY");
+	Radio.Send(Buffer, BufferSize);
+
+	// wait ok msseage
+	WaitForLoRaOK_Blocking();
+}
+
+void BergamotMove(){
+	move_angle = Bergamot_angle - current_angle;
+	if(move_angle > 180) move_angle -= 360;
+	if(move_angle < -180) move_angle += 360;
+	MoveMotorSteps(1024*move_angle/90, 2);
+	current_angle = (current_angle + move_angle + 360) % 360;
+
+	// Send a ready message
+	Buffer[0] = Rx_ID;
+	strcpy((char*)Buffer + 1, "BERGAMOT_READY");
+	Radio.Send(Buffer, BufferSize);
+
+	// wait ok msseage
+	WaitForLoRaOK_Blocking();
+}
+
+
+
+
+
+
 
 
 /* USER CODE END PFP */
@@ -149,18 +402,122 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM2_Init();
+  // ResetMotor();
   /* USER CODE BEGIN 2 */
+  int menu = 1;
+  // LoRa RadioEvents callback 연결
+  RadioEvents.TxDone    = OnTxDone;
+  RadioEvents.RxDone    = OnRxDone;
+  RadioEvents.TxTimeout = OnTxTimeout;
+  RadioEvents.RxTimeout = OnRxTimeout;
+  RadioEvents.RxError   = OnRxError;
+
+  Radio.Init(&RadioEvents);
+
+  // 주파수 설정
+  Radio.SetChannel(RF_FREQUENCY);
+
+  // 송신/수신 설정
+  Radio.SetTxConfig(
+      MODEM_LORA,
+      TX_OUTPUT_POWER,
+      0,
+      LORA_BANDWIDTH,
+      LORA_SPREADING_FACTOR,
+      LORA_CODINGRATE,
+      LORA_PREAMBLE_LENGTH,
+      LORA_FIX_LENGTH_PAYLOAD_ON,
+      true,
+      0,
+      0,
+      LORA_IQ_INVERSION_ON,
+      3000
+  );
+
+  Radio.SetRxConfig(
+      MODEM_LORA,
+      LORA_BANDWIDTH,
+      LORA_SPREADING_FACTOR,
+      LORA_CODINGRATE,
+      0,
+      LORA_PREAMBLE_LENGTH,
+      LORA_SYMBOL_TIMEOUT,
+      LORA_FIX_LENGTH_PAYLOAD_ON,
+      0,
+      true,
+      0,
+      0,
+      LORA_IQ_INVERSION_ON,
+      true
+  );
+
+  // 패킷 첫 바이트에 ID 넣어두기
+  Buffer[0] = Rx_ID;
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  // menu 터치패드로 신호를 받음
+	  switch(menu){
+	  	  case 1: // fresh
+	  		  LavenderMove();
+	  		  CedarwoodMove();
+	  		  VanillaMove();
+	  		  BergamotMove();
+	  		  menu = 0;
+	  		  break;
+	  	  case 2: // calm
+	  		  LavenderMove();
+	  		  CedarwoodMove();
+	   		  VanillaMove();
+	   		  BergamotMove();
+	   		  menu = 0;
+	   		  break;
+	  	  case 3: // confident
+	  		  LavenderMove();
+	  		  CedarwoodMove();
+	  		  VanillaMove();
+	  		  BergamotMove();
+	  		  menu = 0;
+	  		  break;
+	  	  case 4: // sweet & romantic
+	  		  LavenderMove();
+	  		  CedarwoodMove();
+	  		  VanillaMove();
+	  		  BergamotMove();
+	  		  menu = 0;
+	  		  break;
+	  	  case 5: // energetic
+	  		  LavenderMove();
+	  		  CedarwoodMove();
+	  		  VanillaMove();
+	  		  BergamotMove();
+	  		  menu = 0;
+	  		  break;
+	  	  case 6: // cozy
+	  		  LavenderMove();
+	  		  CedarwoodMove();
+	  		  VanillaMove();
+	  		  BergamotMove();
+	  		  menu = 0;
+	  		  break;
+	  	  case 7: // deep & mystic
+	  		  LavenderMove();
+	  		  CedarwoodMove();
+	  		  VanillaMove();
+	  		  BergamotMove();
+	  		  menu = 0;
+	  		  break;
 
-	  int safe_speed_ms = 0;
-	  MoveMotorSteps(4096, safe_speed_ms);  // 90도 회전
-	   // 1초 대기 (선택)
-	  	  //HAL_Delay(100); // 0.5초 정지
+
+
+
+	  }
+
 
 
     /* USER CODE END WHILE */
@@ -330,6 +687,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA0 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PA5 PA6 PA7 */
   GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7;
