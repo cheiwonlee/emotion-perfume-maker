@@ -41,6 +41,10 @@ int move_angle = 0;
 volatile uint8_t lora_ok_flag = 0; // check OK message
 volatile uint8_t lora_wait_flag = 0; // check wait
 
+typedef struct{
+	int sensor_id;
+	float rotation_ml;
+}StepingMotor_t;
 typedef enum
 {
 	LOWPOWER = 0,
@@ -73,7 +77,7 @@ typedef enum
 #define RX_TIMEOUT_VALUE                            1000
 #define BUFFER_SIZE                                 64 		// Define the payload size here
 
-#define Rx_ID			10		// 공유 아이디
+#define Rx_ID			7		// 공유 아이디
 #define PHYMAC_PDUOFFSET_RXID          				0		// packet 내부 아이디 offset
 
 // Define the GPIO pins connected to IN1, IN2, IN3, IN4(Step motor)
@@ -126,6 +130,22 @@ static void MX_USART2_UART_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
+
+uint16_t PrepareTxPacket(int sensor_id, float rotation_ml)
+{
+  // 1. 전송할 데이터 구조체 준비
+  StepingMotor_t Steping_to_send;
+  Steping_to_send.sensor_id = sensor_id;
+  Steping_to_send.rotation_ml = rotation_ml;
+
+  // 2. 전역 'Buffer'에 데이터 쓰기
+  Buffer[0] = Rx_ID;
+  memcpy(Buffer + 1, &Steping_to_send, sizeof(StepingMotor_t));
+
+  // 3. 총 패킷 크기 반환 (ID 1바이트 + 구조체 크기)
+  return (1 + sizeof(StepingMotor_t));
+}
+
 // Half-Step Sequence (8 steps)
 const uint8_t half_step_sequence[8][4] = {
     {1, 0, 0, 0}, // Step 0
@@ -224,9 +244,14 @@ void LavenderMove(){
 	current_angle = (current_angle + move_angle + 360) % 360;
 
 	// Send a ready message
-	Buffer[0] = Rx_ID;
-	strcpy((char*)Buffer + 1, "LAVENDER_READY");
-	Radio.Send(Buffer, BufferSize);
+
+	uint16_t packetSize = PrepareTxPacket(1, 1);
+	StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
+	printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
+	Radio.Send(Buffer, packetSize);
+
+
+
 
 	// wait ok msseage
 	WaitForLoRaOK_Blocking();
@@ -240,9 +265,11 @@ void CedarwoodMove(){
 	current_angle = (current_angle + move_angle + 360) % 360;
 
 	// Send a ready message
-	Buffer[0] = Rx_ID;
-	strcpy((char*)Buffer + 1, "CEDARWOOD_READY");
-	Radio.Send(Buffer, BufferSize);
+	uint16_t packetSize = PrepareTxPacket(1, 1);
+	StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
+	printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
+	Radio.Send(Buffer, packetSize);
+
 
 	// wait ok msseage
 	WaitForLoRaOK_Blocking();
@@ -256,9 +283,10 @@ void VanillaMove(){
 	current_angle = (current_angle + move_angle + 360) % 360;
 
 	// Send a ready message
-	Buffer[0] = Rx_ID;
-	strcpy((char*)Buffer + 1, "VANILLA_READY");
-	Radio.Send(Buffer, BufferSize);
+uint16_t packetSize = PrepareTxPacket(1, 1);
+	StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
+	printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
+	Radio.Send(Buffer, packetSize);
 
 	// wait ok msseage
 	WaitForLoRaOK_Blocking();
@@ -272,9 +300,10 @@ void BergamotMove(){
 	current_angle = (current_angle + move_angle + 360) % 360;
 
 	// Send a ready message
-	Buffer[0] = Rx_ID;
-	strcpy((char*)Buffer + 1, "BERGAMOT_READY");
-	Radio.Send(Buffer, BufferSize);
+	uint16_t packetSize = PrepareTxPacket(1, 1);
+	StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
+	printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
+	Radio.Send(Buffer, packetSize);
 
 	// wait ok msseage
 	WaitForLoRaOK_Blocking();
@@ -309,7 +338,7 @@ void OnRxError( void );
 int __io_putchar(int ch);
 //void Debug_Printf(const char *format, ...);
 /* USER CODE END PFP */
-
+int menu = 1;
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
@@ -375,8 +404,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  HAL_Delay(5000);
 	   // menu 터치패드로 신호를 받음
-	  int menu = 1;
 	  switch(menu){
 	  	  case 1: // fresh
 	  		  LavenderMove();
@@ -722,7 +751,7 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
 
     if (Buffer[0] == Rx_ID)
 	{
-    	if(strcmp((char*)Buffer + 1, "OK") == 0){
+    	if(strcmp((char*)Buffer + 1, "DONE") == 0){
     		lora_ok_flag = 1;
     	}
 	}
