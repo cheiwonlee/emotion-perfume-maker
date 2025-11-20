@@ -1,0 +1,256 @@
+<!doctype html>
+<html class="no-js" lang="en">
+{% load static %}
+<head>
+    <meta charset="UTF-8">
+    <title>Perfume Sensor Dashboard</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f7f9fc;
+        }
+
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 25px;
+            padding: 20px;
+        }
+
+        .sensor-card {
+            border: 2px solid #3e7bfa;
+            border-radius: 12px;
+            padding: 20px;
+            background: #ffffff;
+            box-shadow: 0 5px 12px rgba(0,0,0,0.06);
+        }
+
+        .LittleTitle {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            border-left: 6px solid #00a0c8;
+            padding-left: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            margin-bottom: 15px;
+        }
+
+        th {
+            background: #2e36d8;
+            color: white;
+            padding: 8px;
+            text-align: center;
+        }
+
+        td {
+            padding: 6px;
+            text-align: center;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .status-ok {
+            color: green;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .status-bad {
+            color: red;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .no-data {
+            color: #888;
+            margin-top: 10px;
+        }
+
+    </style>
+</head>
+
+<body>
+
+<div class="sensor-grid">
+
+    <!-- Lavender -->
+    <div class="sensor-card">
+
+        <div class="LittleTitle">Lavender</div>
+
+        {% if lavender_list %}
+        <table>
+            <thead>
+                <tr><th>Date</th><th>Value</th></tr>
+            </thead>
+            <tbody>
+            {% for sensor in lavender_list %}
+                <tr>
+                    <td>{{ sensor.reg_date }}</td>
+                    <td>
+                        {% if not sensor.value %}
+                            제조 가능
+                        {% else %}
+                            제조 불가능
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+            <div class="no-data">데이터 없음</div>
+        {% endif %}
+
+        <div class="LittleTitle">현재 상태</div>
+
+        {% if lavender_list %}
+            {% if lavender_list.0.value %}
+                <div class="status-bad">제조 불가능 (수위 부족)</div>
+            {% else %}
+                <div class="status-ok">제조 가능 (수위 정상)</div>
+            {% endif %}
+
+        {% else %}
+            <div class="no-data">데이터 없음</div>
+        {% endif %}
+    </div>
+
+
+    <!-- Cedarwood -->
+    <div class="sensor-card">
+
+        <div class="LittleTitle">Cedarwood</div>
+
+        {% if cedarwood_list %}
+        <table>
+            <thead>
+                <tr><th>Date</th><th>Value</th></tr>
+            </thead>
+            <tbody>
+            {% for sensor in cedarwood_list %}
+                <tr>
+                    <td>{{ sensor.reg_date }}</td>
+                    <td>
+                        {% if not sensor.value %}
+                            제조 가능
+                        {% else %}
+                            제조 불가능
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+            <div class="no-data">데이터 없음</div>
+        {% endif %}
+
+        <div class="LittleTitle">현재 상태</div>
+
+        {% if cedarwood_list %}
+            {% if cedarwood_list.0.value %}
+                <div class="status-bad">제조 불가능 (수위 부족)</div>
+            {% else %}
+                <div class="status-ok">제조 가능 (수위 정상)</div>
+            {% endif %}
+        {% else %}
+            <div class="no-data">데이터 없음</div>
+        {% endif %}
+    </div>
+
+
+    <!-- Vanilla -->
+    <div class="sensor-card">
+
+        <div class="LittleTitle">Vanilla</div>
+
+        {% if vanilla_list %}
+        <table>
+            <thead>
+                <tr><th>Date</th><th>Value</th></tr>
+            </thead>
+            <tbody>
+            {% for sensor in vanilla_list %}
+                <tr>
+                    <td>{{ sensor.reg_date }}</td>
+                    <td>
+                        {% if not sensor.value %}
+                            제조 가능
+                        {% else %}
+                            제조 불가능
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+            <div class="no-data">데이터 없음</div>
+        {% endif %}
+
+        <div class="LittleTitle">현재 상태</div>
+
+        {% if vanilla_list %}
+            {% if vanilla_list.0.value %}
+                <div class="status-bad">제조 불가능 (수위 부족)</div>
+            {% else %}
+                <div class="status-ok">제조 가능 (수위 정상)</div>
+            {% endif %}
+        {% else %}
+            <div class="no-data">데이터 없음</div>
+        {% endif %}
+    </div>
+
+
+    <!-- Bergamot -->
+    <div class="sensor-card">
+
+        <div class="LittleTitle">Bergamot</div>
+
+        {% if bergamot_list %}
+        <table>
+            <thead>
+                <tr><th>Date</th><th>Value</th></tr>
+            </thead>
+            <tbody>
+            {% for sensor in bergamot_list %}
+                <tr>
+                    <td>{{ sensor.reg_date }}</td>
+                    <td>
+                        {% if not sensor.value %}
+                            제조 가능
+                        {% else %}
+                            제조 불가능
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+            <div class="no-data">데이터 없음</div>
+        {% endif %}
+
+        <div class="LittleTitle">현재 상태</div>
+
+        {% if bergamot_list %}
+            {% if bergamot_list.0.value %}
+                <div class="status-bad">제조 불가능 (수위 부족)</div>
+            {% else %}
+                <div class="status-ok">제조 가능 (수위 정상)</div>
+            {% endif %}
+        {% else %}
+            <div class="no-data">데이터 없음</div>
+        {% endif %}
+    </div>
+
+</div>
+
+</body>
+</html>
