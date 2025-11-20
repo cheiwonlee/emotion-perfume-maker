@@ -37,6 +37,7 @@ int Cedarwood_angle = 90;
 int Vanilla_angle = 180;
 int Bergamot_angle = 270;
 int move_angle = 0;
+int value = 0;
 
 volatile uint8_t lora_ok_flag = 0; // check OK message
 volatile uint8_t lora_wait_flag = 0; // check wait
@@ -92,7 +93,11 @@ typedef enum
 
 // limit switch
 #define LIMIT_SWITCH_PORT GPIOA
-#define LIMIT_SWITCH_PIN  GPIO_PIN_0
+#define LIMIT_SWITCH_PIN  GPIO_PIN_12
+
+// Prox
+#define Lavender_Prox_PORT GPIOA
+#define Lavender_Prox_PIN  GPIO_PIN_15
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -191,12 +196,13 @@ void MoveMotorSteps(int steps, int delay_ms) {
         HAL_Delay(delay_ms);
     }
 }
-/*
+
 void ResetMotor(){
-	while(HAL_GPIO_ReadPin(LIMIT_SWITCH_PORT, LIMIT_SWITCH_PIN)){
+	printf("PA0 = %d\n", HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0));
+	while(HAL_GPIO_ReadPin(LIMIT_SWITCH_PORT, LIMIT_SWITCH_PIN) == GPIO_PIN_SET){
 		MoveMotorSteps(-1, 3);
 	}
-	MoveMotorSteps(5, 3);
+
 
 	SetMotorPins(
 			half_step_sequence[0][0],
@@ -208,7 +214,7 @@ void ResetMotor(){
 
 	// 완료 통신할 것인지?
 }
-*/
+
 
 // wait OK message
 void WaitForLoRaOK_Blocking()
@@ -235,7 +241,7 @@ void WaitForLoRaOK_Blocking()
 }
 
 // home(angle = 0)
-void LavenderMove(){
+void LavenderMove(float ml){
 	move_angle = Lavender_angle - current_angle;
 	if(move_angle > 180) move_angle -= 360;
 	if(move_angle < -180) move_angle += 360;
@@ -245,7 +251,7 @@ void LavenderMove(){
 
 	// Send a ready message
 
-	uint16_t packetSize = PrepareTxPacket(1, 1);
+	uint16_t packetSize = PrepareTxPacket(1, ml);
 	StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
 	printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
 	Radio.Send(Buffer, packetSize);
@@ -257,7 +263,7 @@ void LavenderMove(){
 	WaitForLoRaOK_Blocking();
 }
 
-void CedarwoodMove(){
+void CedarwoodMove(float ml){
 	move_angle = Cedarwood_angle - current_angle;
 	if(move_angle > 180) move_angle -= 360;
 	if(move_angle < -180) move_angle += 360;
@@ -265,7 +271,7 @@ void CedarwoodMove(){
 	current_angle = (current_angle + move_angle + 360) % 360;
 
 	// Send a ready message
-	uint16_t packetSize = PrepareTxPacket(1, 1);
+	uint16_t packetSize = PrepareTxPacket(1, ml);
 	StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
 	printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
 	Radio.Send(Buffer, packetSize);
@@ -275,7 +281,7 @@ void CedarwoodMove(){
 	WaitForLoRaOK_Blocking();
 }
 
-void VanillaMove(){
+void VanillaMove(float ml){
 	move_angle = Vanilla_angle - current_angle;
 	if(move_angle > 180) move_angle -= 360;
 	if(move_angle < -180) move_angle += 360;
@@ -283,7 +289,7 @@ void VanillaMove(){
 	current_angle = (current_angle + move_angle + 360) % 360;
 
 	// Send a ready message
-uint16_t packetSize = PrepareTxPacket(1, 1);
+uint16_t packetSize = PrepareTxPacket(1, ml);
 	StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
 	printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
 	Radio.Send(Buffer, packetSize);
@@ -292,7 +298,7 @@ uint16_t packetSize = PrepareTxPacket(1, 1);
 	WaitForLoRaOK_Blocking();
 }
 
-void BergamotMove(){
+void BergamotMove(float ml){
 	move_angle = Bergamot_angle - current_angle;
 	if(move_angle > 180) move_angle -= 360;
 	if(move_angle < -180) move_angle += 360;
@@ -300,13 +306,22 @@ void BergamotMove(){
 	current_angle = (current_angle + move_angle + 360) % 360;
 
 	// Send a ready message
-	uint16_t packetSize = PrepareTxPacket(1, 1);
+	uint16_t packetSize = PrepareTxPacket(1, ml);
 	StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
 	printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
 	Radio.Send(Buffer, packetSize);
 
 	// wait ok msseage
 	WaitForLoRaOK_Blocking();
+}
+
+// 수위 감지되면 0 출력
+void ProxCheck(){
+	value = HAL_GPIO_ReadPin(Lavender_Prox_PORT, Lavender_Prox_PIN);
+	printf("Lavender : %d\r\n", value);
+	printf("Cedarwood : %d\r\n", 0);
+	printf("Vanilla : %d\r\n", 0);
+	printf("Bergamot : %d\r\n", 0);
 }
 
 
@@ -338,7 +353,7 @@ void OnRxError( void );
 int __io_putchar(int ch);
 //void Debug_Printf(const char *format, ...);
 /* USER CODE END PFP */
-int menu = 1;
+
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
@@ -377,6 +392,7 @@ int main(void)
   MX_SPI1_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+  // ResetMotor();
   // Radio initialization
   RadioEvents.TxDone = OnTxDone;
   RadioEvents.RxDone = OnRxDone;
@@ -398,68 +414,70 @@ int main(void)
 									 0, true, 0, 0, LORA_IQ_INVERSION_ON, true );
 
   Buffer[PHYMAC_PDUOFFSET_RXID] = Rx_ID;
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  HAL_Delay(5000);
+	  ProxCheck();
+	  HAL_Delay(3000);
+	  //MoveMotorSteps(4096, 5);
 	   // menu 터치패드로 신호를 받음
-	  switch(menu){
-	  	  case 1: // fresh
-	  		  LavenderMove();
-	  		  CedarwoodMove();
-	  		  VanillaMove();
-	  		  BergamotMove();
-	  		  menu = 0;
-	  		  break;
-	  	  case 2: // calm
-	  		  LavenderMove();
-	  		  CedarwoodMove();
-	   		  VanillaMove();
-	   		  BergamotMove();
-	   		  menu = 0;
-	   		  break;
-	  	  case 3: // confident
-	  		  LavenderMove();
-	  		  CedarwoodMove();
-	  		  VanillaMove();
-	  		  BergamotMove();
-	  		  menu = 0;
-	  		  break;
-	  	  case 4: // sweet & romantic
-	  		  LavenderMove();
-	  		  CedarwoodMove();
-	  		  VanillaMove();
-	  		  BergamotMove();
-	  		  menu = 0;
-	  		  break;
-	  	  case 5: // energetic
-	  		  LavenderMove();
-	  		  CedarwoodMove();
-	  		  VanillaMove();
-	  		  BergamotMove();
-	  		  menu = 0;
-	  		  break;
-	  	  case 6: // cozy
-	  		  LavenderMove();
-	  		  CedarwoodMove();
-	  		  VanillaMove();
-	  		  BergamotMove();
-	  		  menu = 0;
-	  		  break;
-	  	  case 7: // deep & mystic
-	  		  LavenderMove();
-	  		  CedarwoodMove();
-	  		  VanillaMove();
-	  		  BergamotMove();
-	  		  menu = 0;
-	  		  break;
-	  }
+//	  switch(menu){
+//	  	  case 1: // fresh
+//	  		  LavenderMove(2);
+//	  		  CedarwoodMove(2);
+//	  		  VanillaMove(2);
+//	  		  BergamotMove(8);
+//	  		  menu = 0;
+//	  		  break;
+//	  	  case 2: // calm
+//	  		  LavenderMove(8);
+//	  		  CedarwoodMove(4);
+//	   		  VanillaMove(2);
+//	   		  BergamotMove(2);
+//	   		  menu = 0;
+//	   		  break;
+//	  	  case 3: // confident
+//	  		  LavenderMove(2);
+//	  		  CedarwoodMove(6);
+//	  		  VanillaMove(2);
+//	  		  BergamotMove(4);
+//	  		  menu = 0;
+//	  		  break;
+//	  	  case 4: // sweet & romantic
+//	  		  LavenderMove(4);
+//	  		  CedarwoodMove(2);
+//	  		  VanillaMove(8);
+//	  		  BergamotMove(2);
+//	  		  menu = 0;
+//	  		  break;
+//	  	  case 5: // energetic
+//	  		  LavenderMove(2);
+//	  		  CedarwoodMove(2);
+//	  		  VanillaMove(2);
+//	  		  BergamotMove(10);
+//	  		  menu = 0;
+//	  		  break;
+//	  	  case 6: // cozy
+//	  		  LavenderMove(4);
+//	  		  CedarwoodMove(4);
+//	  		  VanillaMove(8);
+//	  		  BergamotMove(2);
+//	  		  menu = 0;
+//	  		  break;
+//	  	  case 7: // deep & mystic
+//	  		  LavenderMove(1);
+//	  		  CedarwoodMove(4);
+//	  		  VanillaMove(1);
+//	  		  BergamotMove(1);
+//	  		  menu = 0;
+//	  		  break;
+//	  }
 
-	  // 짧은 지연으로 CPU 사용률 조절 (선택사항)
-	  HAL_Delay(1);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -682,8 +700,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA0 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  /*Configure GPIO pins : PA0 PA12 PA15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_12|GPIO_PIN_15;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
