@@ -319,9 +319,13 @@ void BergamotMove(float ml){
 void ProxCheck(){
 	value = HAL_GPIO_ReadPin(Lavender_Prox_PORT, Lavender_Prox_PIN);
 	printf("Lavender : %d\r\n", value);
+	HAL_Delay(1000); // delay없으면 데이터 제대로 전달이 안됨
 	printf("Cedarwood : %d\r\n", 0);
+	HAL_Delay(1000);
 	printf("Vanilla : %d\r\n", 0);
+	HAL_Delay(1000);
 	printf("Bergamot : %d\r\n", 0);
+	HAL_Delay(1000);
 }
 
 
@@ -422,7 +426,7 @@ int main(void)
   while (1)
   {
 	  ProxCheck();
-	  HAL_Delay(3000);
+	  HAL_Delay(5000);
 	  //MoveMotorSteps(4096, 5);
 	   // menu 터치패드로 신호를 받음
 //	  switch(menu){
