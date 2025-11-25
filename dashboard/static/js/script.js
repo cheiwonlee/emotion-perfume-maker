@@ -70,7 +70,7 @@ $(document).ready(function () {
             url: "/sensor/getProxByName/" + name + "/" + queryCnt,
             type: "GET",
             dataType: "json",
-            async: false,
+            async: true,  // ✅ 비동기 처리 (UI 블로킹 방지)
             success: (res) => {
                 chartData[name] = res;
             },
@@ -97,7 +97,7 @@ $(document).ready(function () {
             plots[s.name].draw();
         });
 
-        setTimeout(update, 200);
+        setTimeout(update, 500);  // ✅ 200ms → 500ms로 업데이트 간격 증가 (서버 부하 감소)
     }
 
     update();

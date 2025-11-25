@@ -22,32 +22,40 @@ def index(request):
     return render(request, 'sensor/index.html', context)
 
 def getProx(request, cnt):
-    results = list(Prox.objects.all().order_by('-reg_date').values())[:cnt][::-1]
+    # DB에서 직접 슬라이싱 (Python에서 모든 데이터를 가져오는 것 방지)
+    results = list(Prox.objects.all().order_by('-reg_date').values()[:cnt][::-1])
     return JsonResponse(results, safe=False)
 
 def setProx(request):
     try:
-        name = request.POST['name']
-        raw_value = request.POST['value']
+        name = request.POST.get('name', '').strip()
+        raw_value = request.POST.get('value', '').strip()
+        
+        print(f"[DEBUG] name={repr(name)}, raw_value={repr(raw_value)}, type={type(raw_value)}")
 
-        # 문자열을 Boolean으로 변환
-        value = True if raw_value in ['1', 'true', 'True'] else False
+        # 문자열을 Boolean으로 변환 (더 정확한 비교)
+        value = raw_value in ['1', 'true', 'True', 'TRUE', 1, '1.0']
+        
+        print(f"[DEBUG] Converted value={value}")
 
         Prox.objects.create(
             name=name,
             value=value
         )
-        return JsonResponse({"message": "OK"}, status=200)
+        return JsonResponse({"message": "OK", "received": {"name": name, "value": value}}, status=200)
 
-    except KeyError:
-        return JsonResponse({"message": "KEY_ERROR"}, status=400)
+    except KeyError as e:
+        return JsonResponse({"message": f"KEY_ERROR: {str(e)}"}, status=400)
+    except Exception as e:
+        return JsonResponse({"message": f"ERROR: {str(e)}"}, status=500)
 
 
 def getProxByName(request, name, cnt):
+    # DB에서 직접 제한하여 쿼리 최적화
     results = list(
         Prox.objects.filter(name=name)
         .order_by('-reg_date')
-        .values()
-    )[:cnt][::-1]
+        .values()[:cnt]
+    )[::-1]
 
     return JsonResponse(results, safe=False)

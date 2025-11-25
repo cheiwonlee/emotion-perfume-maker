@@ -4,6 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <title>Perfume Sensor Dashboard</title>
+    
+    <!-- 1초마다 자동 새로고침 -->
+    <meta http-equiv="refresh" content="1">
 
     <style>
         body {
@@ -70,6 +73,12 @@
             color: #888;
             margin-top: 10px;
         }
+        
+        .timestamp {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
 
     </style>
 </head>
@@ -115,6 +124,7 @@
             {% else %}
                 <div class="status-ok">제조 가능 (수위 정상)</div>
             {% endif %}
+            <div class="timestamp">업데이트: {{ lavender_list.0.reg_date|date:"H:i:s" }}</div>
 
         {% else %}
             <div class="no-data">데이터 없음</div>
@@ -159,6 +169,7 @@
             {% else %}
                 <div class="status-ok">제조 가능 (수위 정상)</div>
             {% endif %}
+            <div class="timestamp">업데이트: {{ cedarwood_list.0.reg_date|date:"H:i:s" }}</div>
         {% else %}
             <div class="no-data">데이터 없음</div>
         {% endif %}
@@ -202,6 +213,7 @@
             {% else %}
                 <div class="status-ok">제조 가능 (수위 정상)</div>
             {% endif %}
+            <div class="timestamp">업데이트: {{ vanilla_list.0.reg_date|date:"H:i:s" }}</div>
         {% else %}
             <div class="no-data">데이터 없음</div>
         {% endif %}
@@ -245,6 +257,7 @@
             {% else %}
                 <div class="status-ok">제조 가능 (수위 정상)</div>
             {% endif %}
+            <div class="timestamp">업데이트: {{ bergamot_list.0.reg_date|date:"H:i:s" }}</div>
         {% else %}
             <div class="no-data">데이터 없음</div>
         {% endif %}
