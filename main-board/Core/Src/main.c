@@ -6,8 +6,8 @@
   * @note           : Uses Job Queue & State Machine for LoRa (Matches Syringe Code)
   ******************************************************************************
   */
-/* USER CODE END Header */
-/* Includes ------------------------------------------------------------------*/
+  /* USER CODE END Header */
+  /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -29,19 +29,19 @@ typedef enum {
 
 // [추가] 상태 머신 열거형
 typedef enum {
-   LOWPOWER = 0,
-   IDLE,
-   RX,
-   RX_TIMEOUT,
-   RX_ERROR,
-   TX,
-   TX_TIMEOUT
+    LOWPOWER = 0,
+    IDLE,
+    RX,
+    RX_TIMEOUT,
+    RX_ERROR,
+    TX,
+    TX_TIMEOUT
 } States_t;
 
 // [추가] 주사기 모터와 통신할 구조체 (순서 중요)
 typedef struct {
-   int sensor_id;
-   float rotation_ml;
+    int sensor_id;
+    float rotation_ml;
 } StepingMotor_t;
 /* USER CODE END PTD */
 
@@ -75,10 +75,6 @@ typedef struct {
 #define MY_ID       PACKET_ID
 #define SYRINGE_ID  PACKET_ID
 #define Rx_ID       PACKET_ID
-
-//#define MY_ID           15  // 나 (UI)
-//#define SYRINGE_ID      121    // ★ 주사기 모터 ID (제공해주신 파일에 7로 되어있음)
-//#define Rx_ID           MY_ID // PrepareTxPacket에서 사용
 
 // --- 모터 핀 ---
 #define IN1_PORT GPIOA
@@ -122,7 +118,6 @@ volatile uint32_t lastTouchTime = 0;
 volatile uint8_t lora_ok_flag = 0; // check OK message
 volatile uint8_t lora_wait_flag = 0; // check wait
 
-
 const char* moodNames[] = {
     "NULL", "Fresh", "Calm", "Bold", "Sweet",
     "Active", "Cozy", "Mystic", "Random"
@@ -151,7 +146,7 @@ int Vanilla_angle = 180;
 int Bergamot_angle = 270;
 int move_angle = 0;
 int value = 0;
-const int Bottle_Angles[] = {0, 45, 135, 225, 315};
+const int Bottle_Angles[] = { 0, 45, 135, 225, 315 };
 volatile uint8_t isSyringeDone = 0;
 
 const uint8_t half_step_sequence[8][4] = {
@@ -193,13 +188,17 @@ void ResetMotor(void);
 void MoveToAngle(int target_angle);
 void step_steps(int motor_id, int steps, int delay_ms); // Dummy wrapper
 
+void RunBlendingProcess(uint8_t mood);
+void SendSyringeCommand(float amount);
+void WaitForSyringe(void);
 
 // LoRa Helper
 uint16_t PrepareTxPacket(int sensor_id, float rotation_ml);
+void SendStartCommand(uint8_t mood);   // ★ 추가: Start 패킷 전송 함수 프로토타입
 
 // Callbacks
 void OnTxDone(void);
-void OnRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr);
+void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr);
 void OnTxTimeout(void);
 void OnRxTimeout(void);
 void OnRxError(void);
@@ -208,8 +207,8 @@ void OnRxError(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 extern UART_HandleTypeDef huart2;
-int _write(int file, char *ptr, int len) {
-    HAL_UART_Transmit(&huart2, (uint8_t *)ptr, len, 100);
+int _write(int file, char* ptr, int len) {
+    HAL_UART_Transmit(&huart2, (uint8_t*)ptr, len, 100);
     return len;
 }
 // wait OK message
@@ -235,14 +234,17 @@ void WaitForLoRaOK_Blocking()
             State = IDLE; // 다음 루프 위해 초기화
 
             if (Buffer[0] == Rx_ID) {
-                if (strcmp((char*)&Buffer[1], "DONE") == 0) {
+                if (BufferSize >= 5 &&
+                    strncmp((char*)&Buffer[1], "DONE", 4) == 0) { // ★ strcmp -> strncmp
                     lora_ok_flag = 1;
                     printf("Received DONE message!\n");
                     break;
-                } else {
+                }
+                else {
                     printf("Received message, but not DONE: %s\n", (char*)&Buffer[1]);
                 }
-            } else {
+            }
+            else {
                 printf("Received message with wrong Rx_ID: %d\n", Buffer[0]);
             }
         }
@@ -258,15 +260,35 @@ void WaitForLoRaOK_Blocking()
 // --- [추가] 패킷 생성 함수 (주사기 모터 코드와 호환) ---
 uint16_t PrepareTxPacket(int sensor_id, float rotation_ml)
 {
-  StepingMotor_t Steping_to_send;
-  Steping_to_send.sensor_id = sensor_id;
-  Steping_to_send.rotation_ml = rotation_ml;
+    StepingMotor_t Steping_to_send;
+    Steping_to_send.sensor_id = sensor_id;
+    Steping_to_send.rotation_ml = rotation_ml;
 
-  // 주사기 ID(7)를 첫 바이트에 넣음 -> 주사기 코드가 Buffer[0]을 확인해서 자기 것인지 판단
-  Buffer[0] = SYRINGE_ID;
-  memcpy(Buffer + 1, &Steping_to_send, sizeof(StepingMotor_t));
+    // 첫 바이트에 ID(PACKET_ID = 121) 넣음
+    Buffer[0] = SYRINGE_ID;
+    memcpy(Buffer + 1, &Steping_to_send, sizeof(StepingMotor_t));
 
-  return (1 + sizeof(StepingMotor_t));
+    return (1 + sizeof(StepingMotor_t));
+}
+
+// ★ Start 버튼을 눌렀을 때 주사기에게 "시작" 신호 보내는 함수
+void SendStartCommand(uint8_t mood)
+{
+    // ID
+    Buffer[0] = PACKET_ID;
+
+    // "START" + mood
+    Buffer[1] = 'S';
+    Buffer[2] = 'T';
+    Buffer[3] = 'A';
+    Buffer[4] = 'R';
+    Buffer[5] = 'T';
+    Buffer[6] = mood;    // 선택된 무드 번호
+
+    uint16_t size = 7;
+
+    printf("LoRa: SEND START (mood=%d)\n", mood);
+    Radio.Send(Buffer, size);
 }
 
 // --- Motor Control ---
@@ -294,104 +316,178 @@ void MoveMotorSteps(int steps, int delay_ms) {
 }
 
 // home(angle = 0)
-void LavenderMove(float ml){
-   move_angle = Lavender_angle - current_angle;
-   if(move_angle > 180) move_angle -= 360;
-   if(move_angle < -180) move_angle += 360;
+void LavenderMove(float ml) {
+    move_angle = Lavender_angle - current_angle;
+    if (move_angle > 180) move_angle -= 360;
+    if (move_angle < -180) move_angle += 360;
 
-   MoveMotorSteps(1024*move_angle/90, 2);
-   current_angle = (current_angle + move_angle + 360) % 360;
+    MoveMotorSteps(1024 * move_angle / 90, 2);
+    current_angle = (current_angle + move_angle + 360) % 360;
 
-   // Send a ready message
+    // Send a ready message
+    uint16_t packetSize = PrepareTxPacket(1, ml);
+    StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
+    printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
+    Radio.Send(Buffer, packetSize);
 
-   uint16_t packetSize = PrepareTxPacket(1, ml);
-   StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
-   printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
-   Radio.Send(Buffer, packetSize);
-
-
-
-
-   // wait ok msseage
-   WaitForLoRaOK_Blocking();
+    // wait ok message
+    WaitForLoRaOK_Blocking();
 }
 
-void CedarwoodMove(float ml){
-   move_angle = Cedarwood_angle - current_angle;
-   if(move_angle > 180) move_angle -= 360;
-   if(move_angle < -180) move_angle += 360;
-   MoveMotorSteps(1024*move_angle/90, 2);
-   current_angle = (current_angle + move_angle + 360) % 360;
+void CedarwoodMove(float ml) {
+    move_angle = Cedarwood_angle - current_angle;
+    if (move_angle > 180) move_angle -= 360;
+    if (move_angle < -180) move_angle += 360;
+    MoveMotorSteps(1024 * move_angle / 90, 2);
+    current_angle = (current_angle + move_angle + 360) % 360;
 
-   // Send a ready message
-   uint16_t packetSize = PrepareTxPacket(1, ml);
-   StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
-   printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
-   Radio.Send(Buffer, packetSize);
+    // Send a ready message
+    uint16_t packetSize = PrepareTxPacket(2, ml);
+    StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
+    printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
+    Radio.Send(Buffer, packetSize);
 
-
-   // wait ok msseage
-   WaitForLoRaOK_Blocking();
+    // wait ok message
+    WaitForLoRaOK_Blocking();
 }
 
-void VanillaMove(float ml){
-   move_angle = Vanilla_angle - current_angle;
-   if(move_angle > 180) move_angle -= 360;
-   if(move_angle < -180) move_angle += 360;
-   MoveMotorSteps(1024*move_angle/90, 2);
-   current_angle = (current_angle + move_angle + 360) % 360;
+void VanillaMove(float ml) {
+    move_angle = Vanilla_angle - current_angle;
+    if (move_angle > 180) move_angle -= 360;
+    if (move_angle < -180) move_angle += 360;
+    MoveMotorSteps(1024 * move_angle / 90, 2);
+    current_angle = (current_angle + move_angle + 360) % 360;
 
-   // Send a ready message
-   uint16_t packetSize = PrepareTxPacket(1, ml);
-   StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
-   printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
-   Radio.Send(Buffer, packetSize);
+    // Send a ready message
+    uint16_t packetSize = PrepareTxPacket(3, ml);
+    StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
+    printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
+    Radio.Send(Buffer, packetSize);
 
-   // wait ok msseage
-   WaitForLoRaOK_Blocking();
+    // wait ok message
+    WaitForLoRaOK_Blocking();
 }
 
-void BergamotMove(float ml){
-   move_angle = Bergamot_angle - current_angle;
-   if(move_angle > 180) move_angle -= 360;
-   if(move_angle < -180) move_angle += 360;
-   MoveMotorSteps(1024*move_angle/90, 2);
-   current_angle = (current_angle + move_angle + 360) % 360;
+void BergamotMove(float ml) {
+    move_angle = Bergamot_angle - current_angle;
+    if (move_angle > 180) move_angle -= 360;
+    if (move_angle < -180) move_angle += 360;
+    MoveMotorSteps(1024 * move_angle / 90, 2);
+    current_angle = (current_angle + move_angle + 360) % 360;
 
-   // Send a ready message
-   uint16_t packetSize = PrepareTxPacket(1, ml);
-   StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
-   printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
-   Radio.Send(Buffer, packetSize);
+    // Send a ready message
+    uint16_t packetSize = PrepareTxPacket(4, ml);
+    StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
+    printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
+    Radio.Send(Buffer, packetSize);
 
-   // wait ok msseage
-   WaitForLoRaOK_Blocking();
+    // wait ok message
+    WaitForLoRaOK_Blocking();
 }
 
 // Dummy wrapper for compatibility with snippet
 void step_steps(int motor_id, int steps, int delay_ms) {
     // 여기서는 단순히 딜레이 용도로 사용 (실제 모터는 MoveMotorSteps가 함)
-    HAL_Delay(10);
+    (void)motor_id;
+    (void)steps;
+    HAL_Delay(delay_ms);
 }
 
 void ResetMotor(void) {
     printf("[Motor] Resetting to Home...\n");
+    /* UI + LoRa 테스트 때문에 주석 처리함
     while(HAL_GPIO_ReadPin(LIMIT_SWITCH_PORT, LIMIT_SWITCH_PIN) == GPIO_PIN_SET) {
        MoveMotorSteps(-1, 2);
     }
+    */
     current_angle = 0;
     printf("[Motor] Homed.\n");
 }
 
 void MoveToAngle(int target_angle) {
     move_angle = target_angle - current_angle;
-    if(move_angle > 180) move_angle -= 360;
-    if(move_angle < -180) move_angle += 360;
+    if (move_angle > 180) move_angle -= 360;
+    if (move_angle < -180) move_angle += 360;
     int steps = (int)(4096.0 * (float)move_angle / 360.0);
     printf("[Motor] Moving to %d deg (%d steps)\n", target_angle, steps);
     MoveMotorSteps(steps, 2);
     current_angle = target_angle;
 }
+
+// --- Blending Logic: 선택된 mood에 따라 로터리 모터 + 주사기 동작 ---
+void RunBlendingProcess(uint8_t mood)
+{
+    printf(">>> Blending Start: Mood %d <<<\n", mood);
+
+    // 필요하면 블렌딩 전에 홈으로
+    // ResetMotor();
+
+    switch (mood)
+    {
+    case 1: // fresh
+        LavenderMove(1);
+        CedarwoodMove(1);
+        VanillaMove(1);
+        BergamotMove(4);
+        break;
+
+    case 2: // calm
+        LavenderMove(8);
+        CedarwoodMove(4);
+        VanillaMove(2);
+        BergamotMove(2);
+        break;
+
+    case 3: // confident
+        LavenderMove(2);
+        CedarwoodMove(6);
+        VanillaMove(2);
+        BergamotMove(4);
+        break;
+
+    case 4: // sweet & romantic
+        LavenderMove(4);
+        CedarwoodMove(2);
+        VanillaMove(8);
+        BergamotMove(2);
+        break;
+
+    case 5: // energetic
+        LavenderMove(2);
+        CedarwoodMove(2);
+        VanillaMove(2);
+        BergamotMove(10);
+        break;
+
+    case 6: // cozy
+        LavenderMove(4);
+        CedarwoodMove(4);
+        VanillaMove(8);
+        BergamotMove(2);
+        break;
+
+    case 7: // deep & mystic
+        LavenderMove(1);
+        CedarwoodMove(4);
+        VanillaMove(1);
+        BergamotMove(1);
+        break;
+
+    default:
+        printf("[Blending] Unknown mood: %d\n", mood);
+        break;
+    }
+
+    printf(">>> Blending Complete! <<<\n");
+
+    // 블렌딩 끝난 후 홈으로
+    ResetMotor();
+
+    // Finish 화면으로 전환
+    currentState = SCREEN_FINISH;
+    needsRedraw = 1;
+}
+
 
 
 
@@ -399,18 +495,18 @@ void MoveToAngle(int target_angle) {
 void FlushUARTBuffer(void) {
     uint8_t dummy;
     int count = 0;
-    while(__HAL_UART_GET_FLAG(&huart3, UART_FLAG_RXNE)) {
+    while (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_RXNE)) {
         HAL_UART_Receive(&huart3, &dummy, 1, 1);
-        count++; if(count > 50) break;
+        count++; if (count > 50) break;
     }
     HAL_Delay(2);
-    while(__HAL_UART_GET_FLAG(&huart3, UART_FLAG_RXNE)) {
+    while (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_RXNE)) {
         HAL_UART_Receive(&huart3, &dummy, 1, 1);
     }
 }
 void LCD_EnableTouchKeys(void) {
     FlushUARTBuffer();
-    uint8_t cmd[] = {0x02, 0x35, 0x49, 0x3F, 0x3F, 0x03, 0x00};
+    uint8_t cmd[] = { 0x02, 0x35, 0x49, 0x3F, 0x3F, 0x03, 0x00 };
     uint8_t sum = 0;
     for (int i = 1; i <= 5; i++) sum += cmd[i];
     cmd[6] = sum;
@@ -418,7 +514,7 @@ void LCD_EnableTouchKeys(void) {
     HAL_Delay(200);
 }
 void LCD_Clear(void) {
-    uint8_t cmd[] = {0x02, 0x34, 0x42, 0x33, 0x03, 0x00};
+    uint8_t cmd[] = { 0x02, 0x34, 0x42, 0x33, 0x03, 0x00 };
     uint8_t sum = 0;
     for (int i = 1; i <= 4; i++) sum += cmd[i];
     cmd[5] = sum;
@@ -430,7 +526,7 @@ void LCD_DrawString(uint8_t x, uint8_t y, const char* str, uint8_t size) {
     if (str_len > 16) str_len = 16;
     uint8_t data_n = 4 + str_len;
     uint8_t packet_len = 2 + data_n + 2;
-    uint8_t cmd[32] = {0};
+    uint8_t cmd[32] = { 0 };
     cmd[0] = 0x02; cmd[1] = 0x30 + 2 + data_n; cmd[2] = 0x42;
     cmd[3] = (size == 2) ? 0x32 : 0x31; cmd[4] = 0x30 + x; cmd[5] = 0x30 + y;
     memcpy(&cmd[6], str, str_len); cmd[6 + str_len] = 0x03;
@@ -442,7 +538,7 @@ void LCD_DrawString(uint8_t x, uint8_t y, const char* str, uint8_t size) {
 }
 uint8_t LCD_SendTouchRequest(void) {
     FlushUARTBuffer();
-    uint8_t tx[5] = {0x02, 0x33, 0x45, 0x03, 0x7B};
+    uint8_t tx[5] = { 0x02, 0x33, 0x45, 0x03, 0x7B };
     HAL_UART_Transmit(&huart3, tx, sizeof(tx), 100);
     uint8_t allData[50];
     int totalCount = 0;
@@ -520,40 +616,49 @@ void ProcessTouch(uint8_t touchData) {
     printf("ProcessTouch: 0x%02X (state=%d)\n", touchData, currentState);
 
     switch (currentState) {
-        case SCREEN_START:
+    case SCREEN_START:
+        currentState = SCREEN_MOOD_SELECT; needsRedraw = 1;
+        break;
+    case SCREEN_MOOD_SELECT: {
+        uint8_t keyMask = touchData;
+        if (keyMask == 0) {
+            for (int retry = 0; retry < 3; ++retry) {
+                HAL_Delay(30);
+                uint8_t extra = LCD_SendTouchRequest();
+                if (extra != 0) { keyMask = extra; break; }
+            }
+        }
+        uint8_t mood = DecodeMoodFromTouch(keyMask);
+        if (mood == 8) {
+            uint32_t tick = HAL_GetTick();
+            mood = (tick % 7) + 1;
+        }
+        if (mood == 0) break;
+        selectedMood = mood;
+        currentState = SCREEN_CONFIRM; needsRedraw = 1;
+        break;
+    }
+    case SCREEN_CONFIRM: {
+        if (touchData & TOUCH_KEY4) {
+            // [Back]
             currentState = SCREEN_MOOD_SELECT; needsRedraw = 1;
-            break;
-        case SCREEN_MOOD_SELECT: {
-            uint8_t keyMask = touchData;
-            if (keyMask == 0) {
-                for (int retry = 0; retry < 3; ++retry) {
-                    HAL_Delay(30);
-                    uint8_t extra = LCD_SendTouchRequest();
-                    if (extra != 0) { keyMask = extra; break; }
-                }
-            }
-            uint8_t mood = DecodeMoodFromTouch(keyMask);
-            if (mood == 8) {
-                uint32_t tick = HAL_GetTick();
-                mood = (tick % 7) + 1;
-            }
-            if (mood == 0) break;
-            selectedMood = mood;
-            currentState = SCREEN_CONFIRM; needsRedraw = 1;
-            break;
         }
-        case SCREEN_CONFIRM: {
-            if (touchData & TOUCH_KEY4) {
-                currentState = SCREEN_MOOD_SELECT; needsRedraw = 1;
-            } else if (touchData & TOUCH_KEY0) {
-                currentState = SCREEN_BLENDING; needsRedraw = 1;
-            }
-            break;
+        else if (touchData & TOUCH_KEY0) {
+            // [Start] 눌렀을 때 LoRa로 START + mood 전송
+            lora_ok_flag = 0;                  // DONE 플래그 초기화
+            SendStartCommand(selectedMood);    // START 패킷 전송
+
+            currentState = SCREEN_BLENDING;    // Blending 화면으로 전환
+            needsRedraw = 1;
         }
-        case SCREEN_BLENDING: break;
-        case SCREEN_FINISH:
-            currentState = SCREEN_START; selectedMood = 0; needsRedraw = 1;
-            break;
+        break;
+    }
+    case SCREEN_BLENDING:
+        // Blending 중에는 터치 무시
+        break;
+    case SCREEN_FINISH:
+        currentState = SCREEN_START; selectedMood = 0; needsRedraw = 1;
+        break;
     }
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
     if (needsRedraw) HAL_Delay(300);
@@ -561,135 +666,85 @@ void ProcessTouch(uint8_t touchData) {
 /* USER CODE END 0 */
 
 int main(void) {
-  HAL_Init();
-  SystemClock_Config();
-  MX_GPIO_Init();
-  MX_USART3_UART_Init();
-  MX_SPI1_Init();
-  MX_TIM2_Init();
-  MX_USART2_UART_Init();
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+    MX_USART3_UART_Init();
+    MX_SPI1_Init();
+    MX_TIM2_Init();
+    MX_USART2_UART_Init();
 
-  printf("Combined UI & Motor Controller (Queue Ver)\n");
-  HAL_Delay(2500);
+    printf("Combined UI & Motor Controller (Queue Ver)\n");
+    HAL_Delay(2500);
 
-  // ResetMotor(); // 하드웨어 연결 후 주석 해제
+    // ResetMotor(); // 하드웨어 연결 후 주석 해제
 
-  uint8_t pb7_init = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7);
-  lastEventState = pb7_init;
-  lastTouchTime = HAL_GetTick();
+    uint8_t pb7_init = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7);
+    lastEventState = pb7_init;
+    lastTouchTime = HAL_GetTick();
 
-  LCD_Clear(); HAL_Delay(100); LCD_Clear();
-  LCD_EnableTouchKeys();
+    LCD_Clear(); HAL_Delay(100); LCD_Clear();
+    LCD_EnableTouchKeys();
 
-  RadioEvents.TxDone = OnTxDone;
-  RadioEvents.RxDone = OnRxDone;
-  RadioEvents.TxTimeout = OnTxTimeout;
-  RadioEvents.RxTimeout = OnRxTimeout;
-  RadioEvents.RxError = OnRxError;
+    RadioEvents.TxDone = OnTxDone;
+    RadioEvents.RxDone = OnRxDone;
+    RadioEvents.TxTimeout = OnTxTimeout;
+    RadioEvents.RxTimeout = OnRxTimeout;
+    RadioEvents.RxError = OnRxError;
 
-  Radio.Init( &RadioEvents );
-  Radio.SetChannel( RF_FREQUENCY );
-  Radio.SetTxConfig( MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH,
-                     LORA_SPREADING_FACTOR, LORA_CODINGRATE,
-                     LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
-                     true, 0, 0, LORA_IQ_INVERSION_ON, 3000 );
-  Radio.SetRxConfig( MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
-                     LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH,
-                     LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
-                     0, true, 0, 0, LORA_IQ_INVERSION_ON, true );
+    Radio.Init(&RadioEvents);
+    Radio.SetChannel(RF_FREQUENCY);
+    Radio.SetTxConfig(MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH,
+        LORA_SPREADING_FACTOR, LORA_CODINGRATE,
+        LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
+        true, 0, 0, LORA_IQ_INVERSION_ON, 3000);
+    Radio.SetRxConfig(MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
+        LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH,
+        LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
+        0, true, 0, 0, LORA_IQ_INVERSION_ON, true);
 
-  printf("System Ready.\n");
-  printf("UI: Draw Screen 1\n");
+    printf("System Ready.\n");
+    printf("UI: Draw Screen 1\n");
 
-  while (1) {
-      // 1. 화면 그리기 & 로직 실행
-      if (needsRedraw) {
-          needsRedraw = 0;
-          switch (currentState) {
-              case SCREEN_START:       Draw_Screen_Start(); break;
-              case SCREEN_MOOD_SELECT: Draw_Screen_MoodSelect(); break;
-              case SCREEN_CONFIRM:     Draw_Screen_Confirm(selectedMood); break;
-              case SCREEN_BLENDING:
-                  Draw_Screen_Blending();
-                  break;
-              case SCREEN_FINISH:      Draw_Screen_Finish(); break;
-          }
-      }
+    while (1) {
+        // 1. 화면 그리기 & 로직 실행
+        if (needsRedraw) {
+            needsRedraw = 0;
+            switch (currentState) {
+            case SCREEN_START:       Draw_Screen_Start(); break;
+            case SCREEN_MOOD_SELECT: Draw_Screen_MoodSelect(); break;
+            case SCREEN_CONFIRM:     Draw_Screen_Confirm(selectedMood); break;
+            case SCREEN_BLENDING:
+                Draw_Screen_Blending();
+                RunBlendingProcess(selectedMood);   // 선택된 무드에 맞게 모터 + LoRa 동작
+                break;
+            case SCREEN_FINISH:      Draw_Screen_Finish(); break;
+            }
+        }
 
-      // 2. 터치 감지
-      if (currentState != SCREEN_BLENDING) {
-          uint8_t pb7 = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7);
-          if (pb7 == GPIO_PIN_RESET) {
-              if (HAL_GetTick() - lastTouchTime > 200) {
-                  HAL_Delay(20);
-                  if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_RESET) {
-                      HAL_Delay(10);
-                      uint8_t touchData = LCD_SendTouchRequest();
-                      if (touchData != 0) {
-                          ProcessTouch(touchData);
-                          lastTouchTime = HAL_GetTick();
-                      }
-                  }
-              }
-          }
-          lastEventState = pb7;
-      }
-      int menu = DecodeMoodFromTouch(touchData);
-      switch(menu){
-      case 1: // fresh
-    	  LavenderMove(2);
-    	  CedarwoodMove(2);
-    	  VanillaMove(2);
-    	  BergamotMove(8);
-    	  menu = 0;
-    	  break;
-      case 2: // calm
-    	  LavenderMove(8);
-    	  CedarwoodMove(4);
-    	  VanillaMove(2);
-    	  BergamotMove(2);
-    	  menu = 0;
-    	  break;
-      case 3: // confident
-    	  LavenderMove(2);
-    	  CedarwoodMove(6);
-    	  VanillaMove(2);
-    	  BergamotMove(4);
-    	  menu = 0;
-    	  break;
-      case 4: // sweet & romantic
-    	  LavenderMove(4);
-    	  CedarwoodMove(2);
-    	  VanillaMove(8);
-    	  BergamotMove(2);
-    	  menu = 0;
-    	  break;
-      case 5: // energetic
-    	  LavenderMove(2);
-    	  CedarwoodMove(2);
-    	  VanillaMove(2);
-    	  BergamotMove(10);
-    	  menu = 0;
-    	  break;
-      case 6: // cozy
-    	  LavenderMove(4);
-    	  CedarwoodMove(4);
-    	  VanillaMove(8);
-    	  BergamotMove(2);
-    	  menu = 0;
-    	  break;
-      case 7: // deep & mystic
-    	  LavenderMove(1);
-    	  CedarwoodMove(4);
-    	  VanillaMove(1);
-    	  BergamotMove(1);
-    	  menu = 0;
-    	  break;
-      }
+        // 2. 터치 감지
+        if (currentState != SCREEN_BLENDING) {
+            uint8_t pb7 = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7);
+            if (pb7 == GPIO_PIN_RESET) {
+                if (HAL_GetTick() - lastTouchTime > 200) {
+                    HAL_Delay(20);
+                    if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_7) == GPIO_PIN_RESET) {
+                        HAL_Delay(10);
+                        uint8_t touchData = LCD_SendTouchRequest();
+                        if (touchData != 0) {
+                            ProcessTouch(touchData);
+                            lastTouchTime = HAL_GetTick();
+                        }
+                    }
+                }
+            }
+            lastEventState = pb7;
+        }
 
+        // ★ 기존의 menu/스위치(LavenderMove/CedarwoodMove 호출 부분)는 삭제함
 
-      HAL_Delay(10);
-  }
+        HAL_Delay(10);
+    }
 }
 
 /* USER CODE BEGIN 4 */
@@ -699,11 +754,11 @@ void OnTxDone(void) {
     State = IDLE;
 }
 
-void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
+void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 {
-    Radio.Sleep( );
+    Radio.Sleep();
     BufferSize = size;
-    memcpy( Buffer, payload, BufferSize );
+    memcpy(Buffer, payload, BufferSize);
     RssiValue = rssi;
     SnrValue = snr;
     State = RX;
@@ -712,13 +767,13 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
     if (Buffer[0] == Rx_ID)
     {
         // 수신된 페이로드 (ID 제외)가 "DONE" 문자열인지 확인
-        // size가 최소한 Rx_ID(1) + "DONE"(4) + '\0'(1) = 6 이상인지 확인 필요.
-        if (size >= 5 && strcmp((char*)Buffer + 1, "DONE") == 0) {
+        if (size >= 5 && strncmp((char*)Buffer + 1, "DONE", 4) == 0) { // ★ strcmp -> strncmp
             lora_ok_flag = 1; // OK 플래그 설정
             printf("OnRxDone: OK/DONE message received.\n");
-        } else {
+        }
+        else {
             // 다른 Rx_ID 패킷이거나, DONE이 아닌 메시지 수신
-            // (필요하다면 여기에서 로그 출력)
+            printf("OnRxDone: RX but not DONE\n");
         }
     }
 }
@@ -728,164 +783,162 @@ void OnRxTimeout(void) { Radio.Sleep(); State = RX_TIMEOUT; } // 필요시 RX �
 void OnRxError(void) { Radio.Sleep(); State = RX_ERROR; }
 /* USER CODE END 4 */
 
-// (초기화 함수들 유지)
 void SystemClock_Config(void)
 {
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-  __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 16;
-  RCC_OscInitStruct.PLL.PLLN = 336;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
-  RCC_OscInitStruct.PLL.PLLQ = 2;
-  RCC_OscInitStruct.PLL.PLLR = 2;
-  HAL_RCC_OscConfig(&RCC_OscInitStruct);
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-  HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2);
+    RCC_OscInitTypeDef RCC_OscInitStruct = { 0 };
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = { 0 };
+    __HAL_RCC_PWR_CLK_ENABLE();
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+    RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+    RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+    RCC_OscInitStruct.PLL.PLLM = 16;
+    RCC_OscInitStruct.PLL.PLLN = 336;
+    RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+    RCC_OscInitStruct.PLL.PLLQ = 2;
+    RCC_OscInitStruct.PLL.PLLR = 2;
+    HAL_RCC_OscConfig(&RCC_OscInitStruct);
+    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+        | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+    HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2);
 }
-// ... (나머지 MX_..._Init 함수들도 그대로 두세요) ...
 static void MX_SPI1_Init(void)
 {
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_128;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 10;
-  HAL_SPI_Init(&hspi1);
+    hspi1.Instance = SPI1;
+    hspi1.Init.Mode = SPI_MODE_MASTER;
+    hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+    hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+    hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+    hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+    hspi1.Init.NSS = SPI_NSS_SOFT;
+    hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_128;
+    hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+    hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+    hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+    hspi1.Init.CRCPolynomial = 10;
+    HAL_SPI_Init(&hspi1);
 }
 static void MX_TIM2_Init(void)
 {
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 84-1;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 999;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  HAL_TIM_Base_Init(&htim2);
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig);
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig);
+    TIM_ClockConfigTypeDef sClockSourceConfig = { 0 };
+    TIM_MasterConfigTypeDef sMasterConfig = { 0 };
+    htim2.Instance = TIM2;
+    htim2.Init.Prescaler = 84 - 1;
+    htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim2.Init.Period = 999;
+    htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    HAL_TIM_Base_Init(&htim2);
+    sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+    HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig);
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+    sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+    HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig);
 }
 static void MX_USART2_UART_Init(void)
 {
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  HAL_UART_Init(&huart2);
+    huart2.Instance = USART2;
+    huart2.Init.BaudRate = 115200;
+    huart2.Init.WordLength = UART_WORDLENGTH_8B;
+    huart2.Init.StopBits = UART_STOPBITS_1;
+    huart2.Init.Parity = UART_PARITY_NONE;
+    huart2.Init.Mode = UART_MODE_TX_RX;
+    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+    HAL_UART_Init(&huart2);
 }
 static void MX_USART3_UART_Init(void)
 {
-  huart3.Instance = USART3;
-  huart3.Init.BaudRate = 57600;
-  huart3.Init.WordLength = UART_WORDLENGTH_8B;
-  huart3.Init.StopBits = UART_STOPBITS_1;
-  huart3.Init.Parity = UART_PARITY_NONE;
-  huart3.Init.Mode = UART_MODE_TX_RX;
-  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
-  HAL_UART_Init(&huart3);
+    huart3.Instance = USART3;
+    huart3.Init.BaudRate = 57600;
+    huart3.Init.WordLength = UART_WORDLENGTH_8B;
+    huart3.Init.StopBits = UART_STOPBITS_1;
+    huart3.Init.Parity = UART_PARITY_NONE;
+    huart3.Init.Mode = UART_MODE_TX_RX;
+    huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+    HAL_UART_Init(&huart3);
 }
 static void MX_GPIO_Init(void)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  HAL_GPIO_WritePin(GPIOC, RADIO_ANT_SWITCH_Pin|LED_2_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(RADIO_RESET_GPIO_Port, RADIO_RESET_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(RADIO_NSS_GPIO_Port, RADIO_NSS_Pin, GPIO_PIN_SET);
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = RADIO_ANT_SWITCH_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(RADIO_ANT_SWITCH_GPIO_Port, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = RADIO_RESET_Pin|LED_2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = LED_1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LED_1_GPIO_Port, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = RADIO_DIO_0_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(RADIO_DIO_0_GPIO_Port, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = RADIO_DIO_1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(RADIO_DIO_1_GPIO_Port, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = RADIO_NSS_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(RADIO_NSS_GPIO_Port, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = GPIO_PIN_9;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = GPIO_PIN_10 | GPIO_PIN_4 | GPIO_PIN_5;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = GPIO_PIN_12 | GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-  HAL_NVIC_SetPriority(EXTI3_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+    GPIO_InitTypeDef GPIO_InitStruct = { 0 };
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOH_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    HAL_GPIO_WritePin(GPIOC, RADIO_ANT_SWITCH_Pin | LED_2_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(RADIO_RESET_GPIO_Port, RADIO_RESET_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(RADIO_NSS_GPIO_Port, RADIO_NSS_Pin, GPIO_PIN_SET);
+    GPIO_InitStruct.Pin = B1_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = RADIO_ANT_SWITCH_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(RADIO_ANT_SWITCH_GPIO_Port, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = RADIO_RESET_Pin | LED_2_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = LED_1_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(LED_1_GPIO_Port, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = RADIO_DIO_0_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(RADIO_DIO_0_GPIO_Port, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = RADIO_DIO_1_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(RADIO_DIO_1_GPIO_Port, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = RADIO_NSS_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(RADIO_NSS_GPIO_Port, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = GPIO_PIN_7;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = GPIO_PIN_9;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = GPIO_PIN_10 | GPIO_PIN_4 | GPIO_PIN_5;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = GPIO_PIN_12 | GPIO_PIN_15;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    HAL_NVIC_SetPriority(EXTI3_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(EXTI3_IRQn);
+    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
 void Error_Handler(void)
 {
-  __disable_irq();
-  while (1)
-  {
-  }
+    __disable_irq();
+    while (1)
+    {
+    }
 }
 
 #ifdef USE_FULL_ASSERT
-void assert_failed(uint8_t *file, uint32_t line)
+void assert_failed(uint8_t* file, uint32_t line)
 {
 }
 #endif /* USE_FULL_ASSERT */
