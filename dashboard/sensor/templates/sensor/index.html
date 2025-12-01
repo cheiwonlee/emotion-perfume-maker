@@ -1,269 +1,444 @@
 <!doctype html>
-<html class="no-js" lang="en">
+<html lang="ko">
 {% load static %}
 <head>
     <meta charset="UTF-8">
-    <title>Perfume Sensor Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Mood Perfume Maker</title>
     
-    <!-- 1초마다 자동 새로고침 -->
-    <meta http-equiv="refresh" content="1">
+    <!-- ⚠️ 1초마다 자동 새로고침 제거 (깜빡임 방지) -->
+    <!-- <meta http-equiv="refresh" content="1"> -->
+
+    <!-- Google Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
     <style>
+        :root {
+            --primary-color: #4a90e2;
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+            --text-main: #333333;
+            --text-sub: #666666;
+            --success: #28a745;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
         body {
-            font-family: sans-serif;
-            background: #f7f9fc;
-        }
-
-        .sensor-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 25px;
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
             padding: 20px;
+            color: var(--text-main);
         }
 
-        .sensor-card {
-            border: 2px solid #3e7bfa;
-            border-radius: 12px;
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* --- New: System Alert Banner (재고 부족 경고창) --- */
+        .system-alert {
+            background-color: #fff3f3;
+            border: 2px solid var(--danger);
+            border-radius: 10px;
             padding: 20px;
-            background: #ffffff;
-            box-shadow: 0 5px 12px rgba(0,0,0,0.06);
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 0 15px rgba(220, 53, 69, 0.2);
+            animation: slideDown 0.5s ease-out;
         }
-
-        .LittleTitle {
-            font-size: 20px;
-            font-weight: 700;
-            margin-bottom: 10px;
-            border-left: 6px solid #00a0c8;
-            padding-left: 8px;
+        .alert-icon {
+            font-size: 3rem;
+            color: var(--danger);
+            margin-right: 25px;
+            animation: pulse-red 1.5s infinite;
         }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
+        .alert-content h2 {
+            margin: 0 0 10px 0;
+            color: var(--danger);
+            font-size: 1.5rem;
+        }
+        .alert-content p {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+        .missing-items {
             margin-top: 10px;
-            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
         }
-
-        th {
-            background: #2e36d8;
+        .missing-tag {
+            background-color: var(--danger);
             color: white;
-            padding: 8px;
-            text-align: center;
-        }
-
-        td {
-            padding: 6px;
-            text-align: center;
-            border-bottom: 1px solid #ddd;
-        }
-
-        .status-ok {
-            color: green;
+            padding: 5px 12px;
+            border-radius: 20px;
             font-weight: bold;
-            margin-top: 10px;
+            font-size: 0.9rem;
         }
 
-        .status-bad {
-            color: red;
-            font-weight: bold;
-            margin-top: 10px;
+        /* Header */
+        header {
+            text-align: center;
+            margin-bottom: 30px;
         }
-
-        .no-data {
-            color: #888;
-            margin-top: 10px;
+        header h1 {
+            font-size: 2rem;
+            color: var(--primary-color);
+            margin: 0;
         }
-        
-        .timestamp {
-            font-size: 12px;
-            color: #999;
+        header p {
+            color: var(--text-sub);
             margin-top: 5px;
         }
 
+        /* Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 20px;
+        }
+
+        /* Card Styles */
+        .card {
+            background: var(--card-bg);
+            border-radius: 15px;
+            box-shadow: var(--shadow);
+            padding: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 10px;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Section 1: Main Status */
+        .status-card {
+            grid-column: span 12;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+            border: 1px solid #e1e8ed;
+        }
+
+        .status-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .current-mood {
+            flex: 1;
+            min-width: 200px;
+            text-align: center;
+        }
+        .mood-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+        .mood-name {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #2c3e50;
+            margin: 0;
+        }
+
+        .process-visualizer {
+            flex: 2;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        /* Motor Icons */
+        .motor-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0.3;
+            transition: all 0.3s;
+        }
+        .motor-item.active {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+        .motor-icon {
+            width: 50px;
+            height: 50px;
+            background: #ddd;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            color: white;
+            margin-bottom: 5px;
+        }
+        .motor-item.active .motor-icon {
+            background: var(--success);
+            box-shadow: 0 0 15px rgba(40, 167, 69, 0.5);
+            animation: pulse 1s infinite;
+        }
+        .motor-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .motor-value {
+            font-size: 0.9rem;
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+        /* Section 2: Sensor Cards */
+        .sensor-card {
+            grid-column: span 3;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .sensor-card:hover { transform: translateY(-5px); }
+
+        @media (max-width: 992px) { .sensor-card { grid-column: span 6; } }
+        @media (max-width: 576px) { 
+            .sensor-card { grid-column: span 12; }
+            .status-content { flex-direction: column; }
+            .system-alert { flex-direction: column; text-align: center; }
+            .alert-icon { margin-right: 0; margin-bottom: 15px; }
+            .missing-items { justify-content: center; }
+        }
+
+        .sensor-icon-wrapper {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: #f0f2f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 15px;
+            font-size: 2rem;
+            color: #ccc;
+        }
+        
+        .sensor-ok .sensor-icon-wrapper { background: #d4edda; color: var(--success); }
+        .sensor-bad .sensor-icon-wrapper { background: #f8d7da; color: var(--danger); animation: shake 0.5s; }
+
+        .sensor-status-text { font-size: 1.2rem; font-weight: bold; margin: 10px 0; }
+        .text-ok { color: var(--success); }
+        .text-bad { color: var(--danger); }
+        .timestamp { font-size: 0.75rem; color: #999; margin-top: 10px; }
+
+        /* Animations */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+        }
+        @keyframes pulse-red {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        @keyframes slideDown {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
     </style>
 </head>
-
+<meta http-equiv="refresh" content="1">
 <body>
 
-<div class="sensor-grid">
+    <div class="container">
+        
+        <!-- 시스템 경고 배너: 향료 재고 부족 시 자동으로 표시됩니다 -->
+        {% if lavender_list.0.value or cedarwood_list.0.value or vanilla_list.0.value or bergamot_list.0.value %}
+        <div class="system-alert">
+            <div class="alert-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div class="alert-content">
+                <h2>제조 중단 (System Halted)</h2>
+                <p>향료 재고가 부족하여 스테핑 모터 동작이 불가능합니다. 재고를 보충해 주세요.</p>
+                
+                <div class="missing-items">
+                    {% if lavender_list.0.value %}<span class="missing-tag">Lavender 부족</span>{% endif %}
+                    {% if cedarwood_list.0.value %}<span class="missing-tag">Cedarwood 부족</span>{% endif %}
+                    {% if vanilla_list.0.value %}<span class="missing-tag">Vanilla 부족</span>{% endif %}
+                    {% if bergamot_list.0.value %}<span class="missing-tag">Bergamot 부족</span>{% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        <!-- ------------------------------------------------------------- -->
 
-    <!-- Lavender -->
-    <div class="sensor-card">
+        <header>
+            <h1><i class="fas fa-spray-can"></i> Daily Mood Perfume Maker</h1>
+            <p>실시간 제조 모니터링 시스템</p>
+        </header>
 
-        <div class="LittleTitle">Lavender</div>
+        <div class="dashboard-grid">
 
-        {% if lavender_list %}
-        <table>
-            <thead>
-                <tr><th>Date</th><th>Value</th></tr>
-            </thead>
-            <tbody>
-            {% for sensor in lavender_list %}
-                <tr>
-                    <td>{{ sensor.reg_date }}</td>
-                    <td>
-                        {% if not sensor.value %}
-                            제조 가능
+            <!-- 1. 메인 상태 모니터 -->
+            <div class="card status-card">
+                <div class="card-header">
+                    <div class="card-title"><i class="fas fa-microchip"></i> 시스템 상태 (Main Controller)</div>
+                    <div class="timestamp">
+                        {% if latest_status %}Last Update: {{ latest_status.reg_date|date:"H:i:s" }}{% else %}No Data{% endif %}
+                    </div>
+                </div>
+
+                <div class="status-content">
+                    <div class="current-mood">
+                        {% if latest_status %}
+                            <div class="mood-badge">Selected Mood</div>
+                            <h2 class="mood-name">{{ latest_status.mood_name|default:"Ready" }}</h2>
+                            
+                            <div style="margin-top: 15px; font-size: 1.1rem; font-weight: bold;">
+                                {% if latest_status.ui_state == 'START' %}
+                                    <span style="color: #999;"><i class="fas fa-pause-circle"></i> 대기 중 (Idle)</span>
+                                {% elif 'BLENDING' in latest_status.ui_state %}
+                                    <span style="color: var(--warning);"><i class="fas fa-sync fa-spin"></i> 제조 진행 중...</span>
+                                {% elif latest_status.ui_state == 'FINISH' %}
+                                    <span style="color: var(--success);"><i class="fas fa-check-circle"></i> 제조 완료!</span>
+                                {% else %}
+                                    <span>{{ latest_status.ui_state }}</span>
+                                {% endif %}
+                            </div>
                         {% else %}
-                            제조 불가능
+                            <h2 class="mood-name" style="color: #ccc;">Offline</h2>
                         {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-            <div class="no-data">데이터 없음</div>
-        {% endif %}
+                    </div>
 
-        <div class="LittleTitle">현재 상태</div>
-
-        {% if lavender_list %}
-            {% if lavender_list.0.value %}
-                <div class="status-bad">제조 불가능 (수위 부족)</div>
-            {% else %}
-                <div class="status-ok">제조 가능 (수위 정상)</div>
-            {% endif %}
-            <div class="timestamp">업데이트: {{ lavender_list.0.reg_date|date:"H:i:s" }}</div>
-
-        {% else %}
-            <div class="no-data">데이터 없음</div>
-        {% endif %}
-    </div>
-
-
-    <!-- Cedarwood -->
-    <div class="sensor-card">
-
-        <div class="LittleTitle">Cedarwood</div>
-
-        {% if cedarwood_list %}
-        <table>
-            <thead>
-                <tr><th>Date</th><th>Value</th></tr>
-            </thead>
-            <tbody>
-            {% for sensor in cedarwood_list %}
-                <tr>
-                    <td>{{ sensor.reg_date }}</td>
-                    <td>
-                        {% if not sensor.value %}
-                            제조 가능
+                    <div class="process-visualizer">
+                        {% if latest_status %}
+                            <div class="motor-item {% if latest_status.ui_state == 'BLENDING_L' %}active{% endif %}">
+                                <div class="motor-icon"><i class="fas fa-flask"></i></div>
+                                <div class="motor-label">Lavender</div>
+                                <div class="motor-value">{{ latest_status.recipe_L|floatformat:1 }}ml</div>
+                            </div>
+                            <div class="motor-item {% if latest_status.ui_state == 'BLENDING_C' %}active{% endif %}">
+                                <div class="motor-icon"><i class="fas fa-tree"></i></div>
+                                <div class="motor-label">Cedarwood</div>
+                                <div class="motor-value">{{ latest_status.recipe_C|floatformat:1 }}ml</div>
+                            </div>
+                            <div class="motor-item {% if latest_status.ui_state == 'BLENDING_V' %}active{% endif %}">
+                                <div class="motor-icon"><i class="fas fa-ice-cream"></i></div>
+                                <div class="motor-label">Vanilla</div>
+                                <div class="motor-value">{{ latest_status.recipe_V|floatformat:1 }}ml</div>
+                            </div>
+                            <div class="motor-item {% if latest_status.ui_state == 'BLENDING_B' %}active{% endif %}">
+                                <div class="motor-icon"><i class="fas fa-lemon"></i></div>
+                                <div class="motor-label">Bergamot</div>
+                                <div class="motor-value">{{ latest_status.recipe_B|floatformat:1 }}ml</div>
+                            </div>
                         {% else %}
-                            제조 불가능
+                            <div style="color:#999;">데이터 수신 대기 중...</div>
                         {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-            <div class="no-data">데이터 없음</div>
-        {% endif %}
+                    </div>
+                </div>
+            </div>
 
-        <div class="LittleTitle">현재 상태</div>
+            <!-- 2. 센서 카드 영역 -->
+            <div class="card sensor-card {% if lavender_list.0.value %}sensor-bad{% else %}sensor-ok{% endif %}">
+                <div class="card-header"><div class="card-title">Lavender</div><i class="fas fa-wifi" style="color: #ccc;"></i></div>
+                <div class="sensor-icon-wrapper"><i class="fas fa-fill-drip"></i></div>
+                {% if lavender_list %}
+                    {% if lavender_list.0.value %}
+                        <div class="sensor-status-text text-bad">부족 (Empty)</div>
+                        <div style="font-size:0.9rem;">보충이 필요합니다</div>
+                    {% else %}
+                        <div class="sensor-status-text text-ok">정상 (Full)</div>
+                        <div style="font-size:0.9rem;">제조 가능</div>
+                    {% endif %}
+                    <div class="timestamp">{{ lavender_list.0.reg_date|date:"H:i:s" }}</div>
+                {% else %}<div class="sensor-status-text" style="color:#999;">No Data</div>{% endif %}
+            </div>
 
-        {% if cedarwood_list %}
-            {% if cedarwood_list.0.value %}
-                <div class="status-bad">제조 불가능 (수위 부족)</div>
-            {% else %}
-                <div class="status-ok">제조 가능 (수위 정상)</div>
-            {% endif %}
-            <div class="timestamp">업데이트: {{ cedarwood_list.0.reg_date|date:"H:i:s" }}</div>
-        {% else %}
-            <div class="no-data">데이터 없음</div>
-        {% endif %}
+            <div class="card sensor-card {% if cedarwood_list.0.value %}sensor-bad{% else %}sensor-ok{% endif %}">
+                <div class="card-header"><div class="card-title">Cedarwood</div><i class="fas fa-wifi" style="color: #ccc;"></i></div>
+                <div class="sensor-icon-wrapper"><i class="fas fa-fill-drip"></i></div>
+                {% if cedarwood_list %}
+                    {% if cedarwood_list.0.value %}
+                        <div class="sensor-status-text text-bad">부족 (Empty)</div>
+                        <div style="font-size:0.9rem;">보충이 필요합니다</div>
+                    {% else %}
+                        <div class="sensor-status-text text-ok">정상 (Full)</div>
+                        <div style="font-size:0.9rem;">제조 가능</div>
+                    {% endif %}
+                    <div class="timestamp">{{ cedarwood_list.0.reg_date|date:"H:i:s" }}</div>
+                {% else %}<div class="sensor-status-text" style="color:#999;">No Data</div>{% endif %}
+            </div>
+
+            <div class="card sensor-card {% if vanilla_list.0.value %}sensor-bad{% else %}sensor-ok{% endif %}">
+                <div class="card-header"><div class="card-title">Vanilla</div><i class="fas fa-wifi" style="color: #ccc;"></i></div>
+                <div class="sensor-icon-wrapper"><i class="fas fa-fill-drip"></i></div>
+                {% if vanilla_list %}
+                    {% if vanilla_list.0.value %}
+                        <div class="sensor-status-text text-bad">부족 (Empty)</div>
+                        <div style="font-size:0.9rem;">보충이 필요합니다</div>
+                    {% else %}
+                        <div class="sensor-status-text text-ok">정상 (Full)</div>
+                        <div style="font-size:0.9rem;">제조 가능</div>
+                    {% endif %}
+                    <div class="timestamp">{{ vanilla_list.0.reg_date|date:"H:i:s" }}</div>
+                {% else %}<div class="sensor-status-text" style="color:#999;">No Data</div>{% endif %}
+            </div>
+
+            <div class="card sensor-card {% if bergamot_list.0.value %}sensor-bad{% else %}sensor-ok{% endif %}">
+                <div class="card-header"><div class="card-title">Bergamot</div><i class="fas fa-wifi" style="color: #ccc;"></i></div>
+                <div class="sensor-icon-wrapper"><i class="fas fa-fill-drip"></i></div>
+                {% if bergamot_list %}
+                    {% if bergamot_list.0.value %}
+                        <div class="sensor-status-text text-bad">부족 (Empty)</div>
+                        <div style="font-size:0.9rem;">보충이 필요합니다</div>
+                    {% else %}
+                        <div class="sensor-status-text text-ok">정상 (Full)</div>
+                        <div style="font-size:0.9rem;">제조 가능</div>
+                    {% endif %}
+                    <div class="timestamp">{{ bergamot_list.0.reg_date|date:"H:i:s" }}</div>
+                {% else %}<div class="sensor-status-text" style="color:#999;">No Data</div>{% endif %}
+            </div>
+
+        </div> <!-- End Grid -->
+    </div> <!-- End Container -->
+
+    <!-- 수동 새로고침 버튼 (옵션) -->
+    <div style="text-align: center; margin-top: 20px;">
+        <button onclick="window.location.reload();" style="padding: 10px 20px; font-size: 1rem; cursor: pointer; border: none; border-radius: 8px; background-color: var(--prhimary-color); color: white; box-shadow: var(--shadow);">
+            <i class="fas fa-redo"></i> 수동 새로고침
+        </button>
     </div>
-
-
-    <!-- Vanilla -->
-    <div class="sensor-card">
-
-        <div class="LittleTitle">Vanilla</div>
-
-        {% if vanilla_list %}
-        <table>
-            <thead>
-                <tr><th>Date</th><th>Value</th></tr>
-            </thead>
-            <tbody>
-            {% for sensor in vanilla_list %}
-                <tr>
-                    <td>{{ sensor.reg_date }}</td>
-                    <td>
-                        {% if not sensor.value %}
-                            제조 가능
-                        {% else %}
-                            제조 불가능
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-            <div class="no-data">데이터 없음</div>
-        {% endif %}
-
-        <div class="LittleTitle">현재 상태</div>
-
-        {% if vanilla_list %}
-            {% if vanilla_list.0.value %}
-                <div class="status-bad">제조 불가능 (수위 부족)</div>
-            {% else %}
-                <div class="status-ok">제조 가능 (수위 정상)</div>
-            {% endif %}
-            <div class="timestamp">업데이트: {{ vanilla_list.0.reg_date|date:"H:i:s" }}</div>
-        {% else %}
-            <div class="no-data">데이터 없음</div>
-        {% endif %}
-    </div>
-
-
-    <!-- Bergamot -->
-    <div class="sensor-card">
-
-        <div class="LittleTitle">Bergamot</div>
-
-        {% if bergamot_list %}
-        <table>
-            <thead>
-                <tr><th>Date</th><th>Value</th></tr>
-            </thead>
-            <tbody>
-            {% for sensor in bergamot_list %}
-                <tr>
-                    <td>{{ sensor.reg_date }}</td>
-                    <td>
-                        {% if not sensor.value %}
-                            제조 가능
-                        {% else %}
-                            제조 불가능
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-            <div class="no-data">데이터 없음</div>
-        {% endif %}
-
-        <div class="LittleTitle">현재 상태</div>
-
-        {% if bergamot_list %}
-            {% if bergamot_list.0.value %}
-                <div class="status-bad">제조 불가능 (수위 부족)</div>
-            {% else %}
-                <div class="status-ok">제조 가능 (수위 정상)</div>
-            {% endif %}
-            <div class="timestamp">업데이트: {{ bergamot_list.0.reg_date|date:"H:i:s" }}</div>
-        {% else %}
-            <div class="no-data">데이터 없음</div>
-        {% endif %}
-    </div>
-
-</div>
 
 </body>
 </html>
