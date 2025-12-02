@@ -3,20 +3,19 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # 웹 대시보드 메인 페이지
-    path('', views.index, name='index'), 
+    path('', views.index, name='index'),
     
-    # -----------------------------------------------------
-    # ProximitySensor (수위 센서) 관련 경로 - 이전 버전 호환용
-    path('getProx/<int:cnt>', views.getProx, name='getProx'),
-    path('setProx', views.setProx, name='setProx'),
+    # 센서 데이터 저장(POST 요청) - setProx -> setPerfume으로 이름 변경 및 반영
+    path('setPerfume', views.setPerfume, name='setPerfume'),
+
+    # Mood Code 저장(POST 요청)
+    path('setMood', views.setMood, name='setMood'), 
+    
+    # **새로 추가: C 프로그램 및 시리얼 상태 업데이트 엔드포인트**
+    path('setDeviceStatus', views.setDeviceStatus, name='setDeviceStatus'),
+    
+    # [추가] WATER 센서 상태 업데이트 엔드포인트
+    path('setWaterStatus', views.setWaterStatus, name='setWaterStatus'),
+
     path('getProxByName/<str:name>/<int:cnt>', views.getProxByName, name='getProxByName'),
-    # -----------------------------------------------------
-    
-    # Status (시스템 상태) 관련 새로운 경로
-    # 아두이노/외부 장치에서 제조 상태를 업데이트할 때 사용
-    path('setStatus', views.setStatus, name='setStatus'), 
-    
-    # UI에서 현재 상태(latest_status)를 비동기적으로 가져올 때 사용
-    path('getStatus', views.getStatus, name='getStatus'), 
 ]
