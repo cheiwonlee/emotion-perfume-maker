@@ -13,353 +13,131 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flot/0.8.3/jquery.flot.time.min.js"></script>
     
-    <link rel="stylesheet" href="{% static 'style.css' %}">
-    <style>
-        body {
-            font-family: sans-serif;
-            background: #f7f9fc;
-            margin: 0;
-            padding: 0;
-        }
-
-        /* --- 새로 추가된 시스템 상태 스타일 --- */
-        .system-status-display {
-            background-color: #f0f0f5; /* 밝은 회색 배경 */
-            border: solid 2px #5B8BD0;
-            color: #2c36c8;
-            padding: 15px 30px;
-            margin: 20px auto 10px auto; /* 기분 표시 위쪽으로 이동 */
-            border-radius: 12px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            text-align: center;
-            max-width: 600px;
-        }
-
-        .system-status-display .status-item {
-            font-size: 16px;
-            font-weight: 500;
-            margin: 5px 0;
-        }
-        
-        .mood-display {
-            background-color: #3e7bfa; /* 밝은 파란색 배경 */
-            color: white;
-            padding: 15px 30px;
-            margin: 10px auto 20px auto; /* 상태 표시 아래쪽으로 이동 */
-            border-radius: 12px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            text-align: center;
-            max-width: 600px;
-        }
-        
-        .mood-title {
-            font-size: 18px;
-            font-weight: 400;
-            margin: 0;
-            opacity: 0.8;
-        }
-        
-        .mood-name {
-            font-size: 36px;
-            font-weight: 700;
-            margin-top: 5px;
-        }
-        
-        .sensor-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 25px;
-            padding: 0 20px 20px 20px;
-            max-width: 1200px;
-            margin: auto;
-        }
-
-        .sensor-card {
-            background: #fff;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        }
-
-        .status-ok {
-            background-color: #e6ffe6;
-            color: #008000;
-            padding: 10px;
-            border-radius: 5px;
-            font-weight: bold;
-            margin: 10px 0;
-            text-align: center;
-        }
-
-        .status-bad {
-            background-color: #ffe6e6;
-            color: #ff0000;
-            padding: 10px;
-            border-radius: 5px;
-            font-weight: bold;
-            margin: 10px 0;
-            text-align: center;
-        }
-
-        .timestamp {
-            font-size: 0.8em;
-            color: #888;
-            margin-top: 10px;
-            text-align: right;
-        }
-
-        .no-data {
-            color: #aaa;
-            text-align: center;
-            padding: 10px;
-        }
-
-        table {
-            width: 100%;
-            margin: 10px 0;
-        }
-
-        th, td {
-            padding: 8px;
-            text-align: center;
-            border-bottom: 1px solid #eee;
-        }
-
-        .LittleTitle {
-
-            /* 폰트 스타일 */
-            font-size: 1.1em; /* 글꼴 크기 키우기 */
-            font-weight: 600; /* 글꼴 두껍게 */
-            color: #333; /* 글꼴 색상을 진하게 */
-            text-align: left; /* 왼쪽 정렬 (더 깔끔하게) */
-            text-align: center;
-    
-            /* 마진 및 패딩 */
-            padding-bottom: 5px; /* 아래쪽 패딩으로 구분선과 제목 사이 간격 확보 */
-            padding-left: 5px; /* 왼쪽 패딩 추가 */
-            margin-top: 20px;
-            margin-bottom: 10px;
-
-            /* 강조선 (아래쪽에 파란색 밑줄 추가) */
-            border-bottom: 2px solid #5B8BD0; /* 주요 색상에 맞춘 구분선 */
-        }
-
-    .perfume-action-display {
-        background-color: #e3f2fd; /* 밝은 파란색 배경 */
-        border: solid 2px #5B8BD0;
-        color: #1a76d2;
-        padding: 15px 30px;
-        margin: 10px auto; 
-        border-radius: 12px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        text-align: center;
-        max-width: 600px;
-        font-size: 20px;
-        font-weight: 600;
-    }
-    </style>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">    <!-- [Image of Dashboard for IOT Sensor Data] -->
     <!-- [Image of Dashboard for IOT Sensor Data] -->
 </head>
+
+
+
 <body>
+    <div class="snow-container"></div>
     <div class="main-container">
+        <header class="dashboard-header">
+            <div class="header-title">
+                <h1>🎄 PERFUME BLENDING STATION</h1> 
+            </div>
+        </header>
         
-        <!-- 시스템 상태 표시 영역 -->
-        <div class="system-status-display">
-            <div class="status-item">
-                <strong>시스템 상태:</strong> {{ system_status_message }}
+    <div class="status-summary">
+        <div class="status-box system-status">
+                <div class="status-led 
+                    {% if overall_status_message == '제조 가능' %}ok{% else %}fail{% endif %}">
+                </div>
+                <span class="title">전체 시스템 상태</span>
+                <span class="content system-message">{{ system_status_message }}</span>
             </div>
-        </div>
-        <div class="perfume-action-display">
-            {{ latest_perfume_message }}
-        </div>
         <!-- 기분 표시 영역 -->
-        <div class="mood-display">
-            <div class="mood-title">현재 당신의 기분은?</div>
-            <div class="mood-name">{{ current_mood_name }}</div>
+        <div class="status-box mood">
+                <div class="status-led on"></div> 
+                <span class="title">현재 당신의 기분은</span>
+                <span class="content mood-code">{{ current_mood_name }}</span>
         </div>
+    </div>
 
-        <div class="pageClass">
-            <div class="LittleTitle">센서 현황</div>
-            
-            <div class="sensor-grid">
-                
-                <!-- Lavender -->
-                <div class="sensor-card">
-                    <div class="LittleTitle">Lavender</div>
 
-                    <!-- 최신 데이터 목록 테이블 (1개) -->
-                    {% if lavender_list %}
-                    <table>
-                        <thead>
-                            <tr><th>시간</th><th>재고 현황</th></tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>{{ lavender_list.0.reg_date|date:"H:i:s" }}</td>
-                                <td>
-                                    {% if not lavender_list.0.value %}
-                                        충분
-                                    {% else %}
-                                        부족
-                                    {% endif %}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    {% else %}
-                        <div class="no-data">데이터 없음</div>
-                    {% endif %}
-                    
-                    <div class="LittleTitle">현재 상태</div>
-                    
-                    {% if lavender_list %}
-                        {% if lavender_list.0.value %}
-                            <div class="status-bad">제조 불가능</div>
-                        {% else %}
-                            <div class="status-ok">제조 가능</div>
-                        {% endif %}
-                        <div class="timestamp">업데이트: {{ lavender_list.0.reg_date|date:"H:i:s" }}</div>
-                    {% else %}
-                        <div class="no-data">데이터 없음</div>
-                    {% endif %}
 
-                    <div id="chart_lavender" class="flotChart"></div>
+
+<div class="new-info-section">
+            <div class="info-box injection">
+                <div class="status-led 
+                    {% if LATEST_PERFUME_ACTION.0 != 'N/A' %}on{% else %}fail{% endif %}">
                 </div>
-
-                <!-- Cedarwood -->
-                <div class="sensor-card">
-                    <div class="LittleTitle">Cedarwood</div>
-
-                    <!-- 최신 데이터 목록 테이블 (1개) -->
-                    {% if cedarwood_list %}
-                    <table>
-                        <thead>
-                            <tr><th>시간</th><th>재고</th></tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>{{ cedarwood_list.0.reg_date|date:"H:i:s" }}</td>
-                                <td>
-                                    {% if not cedarwood_list.0.value %}
-                                        충분
-                                    {% else %}
-                                        부족
-                                    {% endif %}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    {% else %}
-                        <div class="no-data">데이터 없음</div>
-                    {% endif %}
-                    
-                    <div class="LittleTitle">현재 상태</div>
-                    
-                    {% if cedarwood_list %}
-                        {% if cedarwood_list.0.value %}
-                            <div class="status-bad">제조 불가능</div>
-                        {% else %}
-                            <div class="status-ok">제조 가능</div>
-                        {% endif %}
-                        <div class="timestamp">업데이트: {{ cedarwood_list.0.reg_date|date:"H:i:s" }}</div>
-                    {% else %}
-                        <div class="no-data">데이터 없음</div>
-                    {% endif %}
-
-                    <div id="chart_cedarwood" class="flotChart"></div>
-                </div>
-
-                <!-- Vanilla -->
-                <div class="sensor-card">
-                    <div class="LittleTitle">Vanilla</div>
-
-                    <!-- 최신 데이터 목록 테이블 (1개) -->
-                    {% if vanilla_list %}
-                    <table>
-                        <thead>
-                            <tr><th>시간</th><th>재고</th></tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>{{ vanilla_list.0.reg_date|date:"H:i:s" }}</td>
-                                <td>
-                                    {% if not vanilla_list.0.value %}
-                                        충분
-                                    {% else %}
-                                        부족
-                                    {% endif %}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    {% else %}
-                        <div class="no-data">데이터 없음</div>
-                    {% endif %}
-                    
-                    <div class="LittleTitle">현재 상태</div>
-                    
-                    {% if vanilla_list %}
-                        {% if vanilla_list.0.value %}
-                            <div class="status-bad">제조 불가능</div>
-                        {% else %}
-                            <div class="status-ok">제조 가능</div>
-                        {% endif %}
-                        <div class="timestamp">업데이트: {{ vanilla_list.0.reg_date|date:"H:i:s" }}</div>
-                    {% else %}
-                        <div class="no-data">데이터 없음</div>
-                    {% endif %}
-
-                    <div id="chart_vanilla" class="flotChart"></div>
-                </div>
-
-                <!-- Bergamot -->
-                <div class="sensor-card">
-                    <div class="LittleTitle">Bergamot</div>
-
-                    <!-- 최신 데이터 목록 테이블 (1개) -->
-                    {% if bergamot_list %}
-                    <table>
-                        <thead>
-                            <tr><th>시간</th><th>재고</th></tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>{{ bergamot_list.0.reg_date|date:"H:i:s" }}</td>
-                                <td>
-                                    {% if not bergamot_list.0.value %}
-                                        충분
-                                    {% else %}
-                                        부족
-                                    {% endif %}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    {% else %}
-                        <div class="no-data">데이터 없음</div>
-                    {% endif %}
-                    
-                    <div class="LittleTitle">현재 상태</div>
-                    
-                    {% if bergamot_list %}
-                        {% if bergamot_list.0.value %}
-                            <div class="status-bad">제조 불가능</div>
-                        {% else %}
-                            <div class="status-ok">제조 가능</div>
-                        {% endif %}
-                        <div class="timestamp">업데이트: {{ bergamot_list.0.reg_date|date:"H:i:s" }}</div>
-                    {% else %}
-                        <div class="no-data">데이터 없음</div>
-                    {% endif %}
-
-                    <div id="chart_bergamot" class="flotChart"></div>
-                </div>
-
+                <span class="info-title">주입량</span>
+                <span class="info-content">{{ latest_perfume_message }}</span>
             </div>
         </div>
+        
+        <div class="perfume-list">
+            
+            <div class="perfume-item lavender" id="perfume-lavender">
+                <div class="status-led 
+                    {% if not lavender_list or lavender_list.0.value %}fail{% else %}ok{% endif %}">
+                </div>
+                <div class="perfume-name-wrap">
+                    <span class="name">Lavender</span>
+                </div>
+                <div class="stock-status-wrap">
+                    {% if not lavender_list or lavender_list.0.value %}
+                        <div class="stock-status-text bad">부족</div>
+                    {% else %}
+                        <div class="stock-status-text ok">충분</div>
+                    {% endif %}
+                </div>
+                <div class="chart-title">재고 변화 추이 </div>
+                <div id="chart_lavender" class="flotChart"></div> 
+            </div>
+
+            <div class="perfume-item cedarwood" id="perfume-cedarwood">
+                <div class="status-led 
+                    {% if not cedarwood_list or cedarwood_list.0.value %}fail{% else %}ok{% endif %}">
+                </div>
+                <div class="perfume-name-wrap">
+                    <span class="name">Cedarwood</span>
+                </div>
+                <div class="stock-status-wrap">
+                    {% if not cedarwood_list or cedarwood_list.0.value %}
+                        <div class="stock-status-text bad">부족</div>
+                    {% else %}
+                        <div class="stock-status-text ok">충분</div>
+                    {% endif %}
+                </div>
+                <div class="chart-title">재고 변화 추이 </div>
+                <div id="chart_cedarwood" class="flotChart"></div> 
+            </div>
+
+            <div class="perfume-item vanilla" id="perfume-vanilla">
+                <div class="status-led 
+                    {% if not vanilla_list or vanilla_list.0.value %}fail{% else %}ok{% endif %}">
+                </div>
+                <div class="perfume-name-wrap">
+                    <span class="name">Vanilla</span>
+                </div>
+                <div class="stock-status-wrap">
+                    {% if not vanilla_list or vanilla_list.0.value %}
+                        <div class="stock-status-text bad">부족</div>
+                    {% else %}
+                        <div class="stock-status-text ok">충분</div>
+                    {% endif %}
+                </div>
+                <div class="chart-title">재고 변화 추이</div>
+                <div id="chart_vanilla" class="flotChart"></div> 
+            </div>
+
+            <div class="perfume-item bergamot" id="perfume-bergamot">
+                <div class="status-led 
+                    {% if not bergamot_list or bergamot_list.0.value %}fail{% else %}ok{% endif %}">
+                </div>
+                <div class="perfume-name-wrap">
+                    <span class="name">Bergamot</span>
+                </div>
+                <div class="stock-status-wrap">
+                    {% if not bergamot_list or bergamot_list.0.value %}
+                        <div class="stock-status-text bad">부족</div>
+                    {% else %}
+                        <div class="stock-status-text ok">충분</div>
+                    {% endif %}
+                </div>
+                <div class="chart-title">재고 변화 추이</div>
+                <div id="chart_bergamot" class="flotChart"></div> 
+            </div>
+            
+        </div>
+
     </div>
     
     <!-- 스크립트 로드 (차트 업데이트) -->
-    <script src="{% static 'script.js' %}"></script>
+    <script src="{% static 'js/script.js' %}"></script>
+
+    
 </body>
 </html>
