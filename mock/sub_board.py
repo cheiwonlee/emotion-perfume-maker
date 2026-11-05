@@ -41,6 +41,10 @@ class SubBoard:
         if packet[0] != self.rx_id:
             self.log(f"> ID 불일치로 무시 (받은 ID={packet[0]}, 내 ID={self.rx_id})")
             return
+        if protocol.is_level_query(packet, self.rx_id):  # SendLevels()
+            levels = [self.read_level(sid) for sid in (1, 2, 3, 4)]
+            self.radio.send(protocol.build_level_reply(self.rx_id, levels))
+            return
         # main.c: if (BufferSize == (1 + sizeof(StepingMotor_t)))
         if len(packet) != protocol.JOB_PACKET_SIZE:
             self.log(f"> 작업 패킷이 아님 ({len(packet)}B) — 무시")  # START 패킷이 여기에 해당

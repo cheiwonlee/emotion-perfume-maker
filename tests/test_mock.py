@@ -93,6 +93,17 @@ class VirtualSystemTests(unittest.TestCase):
         self.make_perfume(system, 1)
         self.assertTrue(wait(lambda: system.main_board.current_state == SCREEN_FINISH))
         self.assertIn("WATER_O : 3", self.drain_serial(system))
+    def test_level_query_at_start(self):
+        """부팅해서 시작 화면이 뜨면 네 통의 수위를 모두 보고"""
+        system = self.make()
+        system.tanks.drain(4)
+        self.assertTrue(wait(lambda: any(l == "WATER_X : 4" for l in self.lines(system))))
+        self.assertIn("WATER_O : 2", self.seen)
+
+    def lines(self, system):
+        self.seen = getattr(self, "seen", []) + self.drain_serial(system)
+        return self.seen
+
 
 if __name__ == "__main__":
     unittest.main()

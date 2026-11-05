@@ -52,6 +52,7 @@ RECIPES = {
 BOTTLE_ANGLES = {1: 0, 2: 90, 3: 180, 4: 270}
 
 RX_TIMEOUT_VALUE = 1000  # ms
+LEVEL_QUERY_INTERVAL_MS = 30000
 
 REPLY_DONE, REPLY_LOW, REPLY_TIMEOUT = "DONE", "LOW", "TIMEOUT"  # main.c SyringeReply_t
 
@@ -80,6 +81,7 @@ class MainBoard:
         self.needs_redraw = True
         self.selected_mood = 0
         self.last_touch_time = 0
+        self.last_level_query = 0
 
         self.rotary = VirtualStepperMotor("rotary", clock)
         self.current_angle = 0
@@ -109,6 +111,7 @@ class MainBoard:
                 state = self.current_state
                 if state == SCREEN_START:
                     self.draw_screen_start()
+                    self.query_levels()
                 elif state == SCREEN_MOOD_SELECT:
                     self.draw_screen_mood_select()
                 elif state == SCREEN_CONFIRM:
@@ -127,6 +130,10 @@ class MainBoard:
                         self.process_touch(touch)
                         self.last_touch_time = self.clock.tick()
 
+            # 3. 시작 화면에서 기다리는 동안 주기적으로 수위 확인
+            if (self.current_state == SCREEN_START and not self.needs_redraw
+                    and self.clock.tick() - self.last_level_query > LEVEL_QUERY_INTERVAL_MS):
+                self.query_levels()
             self.clock.delay(10)
 
     # ------------------------------------------------------------------ 터치
@@ -234,6 +241,26 @@ class MainBoard:
                 self.printf("Received message, but not DONE/LOW")
         self.printf(f"No reply within {int(timeout_ms)} ms")
         return REPLY_TIMEOUT, protocol.LEVEL_UNKNOWN
+
+    def query_levels(self):
+        """main.c QueryLevels(): 서브보드에 네 통의 수위를 묻고 WATER_X/O 출력"""
+        self.last_level_query = self.clock.tick()
+        self._drain_rx()
+        self.radio.send(protocol.build_level_query(self.packet_id))
+        start = self.clock.tick()
+        while self.clock.tick() - start < 2000:
+            try:
+                packet = self._rx.get(timeout=RX_TIMEOUT_VALUE / 1000 / self.clock.speed)
+            except queue.Empty:
+                continue
+            if protocol.is_level_reply(packet, self.packet_id):
+                for sid, level in zip((1, 2, 3, 4), packet[4:8]):
+                    if level == protocol.LEVEL_LOW:
+                        self.printf(f"WATER_X : {sid}")  # [대시보드]
+                    elif level == protocol.LEVEL_OK:
+                        self.printf(f"WATER_O : {sid}")  # [대시보드]
+                return
+        self.printf("No level reply from syringe board")
 
     def send_start_command(self, mood: int):
         self.printf(f"LoRa: SEND START (mood={mood})")

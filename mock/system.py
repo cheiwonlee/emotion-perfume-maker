@@ -58,7 +58,7 @@ def create_virtual_system(
     serial = MockSerial(echo=(lambda line: out(f"  [UART] {line}")) if show_serial else None)
     lcd = VirtualTouchLCD(on_screen=(lambda t, c: render_lcd(t, c, out)) if show_lcd else None)
     tanks = VirtualPerfumeTanks(capacity_ml=capacity_ml)
-    channel = VirtualLoRaChannel(loss_rate=loss_rate, log=out)
+    channel = VirtualLoRaChannel(airtime_ms=30 / clock.speed, loss_rate=loss_rate, log=out)  # 전파 시간도 배속에 맞춤
 
     main_radio = VirtualRadio("main-board", channel)
     sub_radio = VirtualRadio("sub-board", channel)

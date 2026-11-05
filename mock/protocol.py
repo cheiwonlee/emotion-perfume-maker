@@ -12,6 +12,8 @@ C 코드의 구조체:
     시작 신호 (메인 → 서브) : [ID(1)] + "START" + [mood(1)]                    총 7바이트
     완료 응답 (서브 → 메인) : [ID(1)] + "DONE" + [주입 후 수위(1)]             총 6바이트
     부족 응답 (서브 → 메인) : [ID(1)] + "LOW" + [sensor_id(1)]                 총 5바이트
+    수위 조회 (메인 → 서브) : [ID(1)] + "LVL?"                                 총 5바이트
+    수위 응답 (서브 → 메인) : [ID(1)] + "LVL" + [통1][통2][통3][통4]            총 8바이트
 수위 값: 1 충분 / 0 부족 / 0xFF 센서 없음
 """
 import struct
@@ -58,6 +60,22 @@ def build_done_packet(packet_id: int, level: int = LEVEL_UNKNOWN) -> bytes:
 def build_low_packet(packet_id: int, sensor_id: int) -> bytes:
     """sub-board RunJob(): 향료 부족으로 작업 거절"""
     return bytes([packet_id]) + b"LOW" + bytes([sensor_id])
+
+
+def build_level_query(packet_id: int) -> bytes:
+    return bytes([packet_id]) + b"LVL?"
+
+
+def is_level_query(packet: bytes, expected_id: int) -> bool:
+    return len(packet) == 5 and packet[0] == expected_id and packet[1:5] == b"LVL?"
+
+
+def build_level_reply(packet_id: int, levels) -> bytes:
+    return bytes([packet_id]) + b"LVL" + bytes(levels)
+
+
+def is_level_reply(packet: bytes, expected_id: int) -> bool:
+    return len(packet) >= 8 and packet[0] == expected_id and packet[1:4] == b"LVL"
 
 
 def is_low_packet(packet: bytes, expected_id: int) -> bool:
