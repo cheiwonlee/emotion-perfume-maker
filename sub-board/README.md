@@ -14,6 +14,7 @@ STM32에서 SX1272 계열 LoRa 모듈로 작업 명령을 수신하여 4대의 �
 - Prox 센서: Prox1_Pin, Prox2_Pin (입력, 풀업) (추가 예정)
 
 ## 패킷 포맷
+- `Rx_ID` = 121 (메인보드 `PACKET_ID` 와 같아야 함)
 - 수신: `[Rx_ID(1)] + [sensor_id:int32][rotation_ml:float32]` (총 1 + sizeof(StepingMotor_t))
 - 완료 응답: `[Rx_ID(1)] + "DONE"(4)` (총 5 바이트)
 

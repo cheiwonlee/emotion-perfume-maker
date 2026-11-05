@@ -325,6 +325,7 @@ void LavenderMove(float ml) {
     current_angle = (current_angle + move_angle + 360) % 360;
 
     // Send a ready message
+    printf("PERFUME : Lavender : %d\n", (int)ml); // [대시보드] 주입량 (newlib-nano 는 기본 설정에서 %f 를 출력하지 않아 정수로)
     uint16_t packetSize = PrepareTxPacket(1, ml);
     StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
     printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
@@ -342,6 +343,7 @@ void CedarwoodMove(float ml) {
     current_angle = (current_angle + move_angle + 360) % 360;
 
     // Send a ready message
+    printf("PERFUME : Cedarwood : %d\n", (int)ml); // [대시보드] 주입량 (newlib-nano 는 기본 설정에서 %f 를 출력하지 않아 정수로)
     uint16_t packetSize = PrepareTxPacket(2, ml);
     StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
     printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
@@ -359,6 +361,7 @@ void VanillaMove(float ml) {
     current_angle = (current_angle + move_angle + 360) % 360;
 
     // Send a ready message
+    printf("PERFUME : Vanilla : %d\n", (int)ml); // [대시보드] 주입량 (newlib-nano 는 기본 설정에서 %f 를 출력하지 않아 정수로)
     uint16_t packetSize = PrepareTxPacket(3, ml);
     StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
     printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
@@ -376,6 +379,7 @@ void BergamotMove(float ml) {
     current_angle = (current_angle + move_angle + 360) % 360;
 
     // Send a ready message
+    printf("PERFUME : Bergamot : %d\n", (int)ml); // [대시보드] 주입량 (newlib-nano 는 기본 설정에서 %f 를 출력하지 않아 정수로)
     uint16_t packetSize = PrepareTxPacket(4, ml);
     StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
     printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
@@ -577,12 +581,14 @@ static uint8_t DecodeMoodFromTouch(uint8_t touchData) {
 
 // --- UI ---
 void Draw_Screen_Start(void) {
+    printf("STATUS : SCREEN_START\n");      // [대시보드] 화면 상태
     LCD_Clear(); HAL_Delay(50);
     LCD_DrawString(25, 30, "DAILY MOOD", 1); HAL_Delay(50);
     LCD_DrawString(13, 48, "PERFUME MAKER", 1); HAL_Delay(50);
     LCD_DrawString(5, 104, "Tap to continue", 1);
 }
 void Draw_Screen_MoodSelect(void) {
+    printf("STATUS : SCREEN_MOODSELECT\n"); // [대시보드] 화면 상태
     LCD_Clear();
     LCD_DrawString(6, 6, "Fresh", 1); LCD_DrawString(74, 6, "Calm", 1); HAL_Delay(50);
     LCD_DrawString(6, 40, "Bold", 1); LCD_DrawString(74, 40, "Sweet", 1); HAL_Delay(50);
@@ -590,6 +596,7 @@ void Draw_Screen_MoodSelect(void) {
     LCD_DrawString(6, 108, "Mystic", 1); LCD_DrawString(74, 108, "Random", 1);
 }
 void Draw_Screen_Confirm(uint8_t mood) {
+    printf("STATUS : SCREEN_CONFIRM\n");    // [대시보드] 화면 상태
     LCD_Clear();
     char moodTitle[24];
     sprintf(moodTitle, "Mood: %s", moodNames[mood]);
@@ -598,11 +605,13 @@ void Draw_Screen_Confirm(uint8_t mood) {
     LCD_DrawString(70, 106, "[Start]", 1);
 }
 void Draw_Screen_Blending(void) {
+    printf("STATUS : SCREEN_BLENDING\n");   // [대시보드] 화면 상태
     LCD_Clear();
     LCD_DrawString(20, 50, "Blending...", 1); HAL_Delay(100);
     LCD_DrawString(20, 70, "Please wait!", 1);
 }
 void Draw_Screen_Finish(void) {
+    printf("STATUS : SCREEN_FINISH\n");     // [대시보드] 화면 상태
     LCD_Clear();
     LCD_DrawString(40, 15, "Finish!", 1); HAL_Delay(100);
     LCD_DrawString(16, 40, "Your perfume", 1); HAL_Delay(50);
@@ -635,6 +644,7 @@ void ProcessTouch(uint8_t touchData) {
         }
         if (mood == 0) break;
         selectedMood = mood;
+        printf("MOOD : %d\n", mood);           // [대시보드] 선택한 기분 (Random 은 실제로 정해진 번호)
         currentState = SCREEN_CONFIRM; needsRedraw = 1;
         break;
     }

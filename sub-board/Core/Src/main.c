@@ -90,7 +90,7 @@ typedef struct
 #define RX_TIMEOUT_VALUE                            1000
 #define BUFFER_SIZE                                 64 		// Define the payload size here
 
-#define Rx_ID			20		// 공유 아이디
+#define Rx_ID			121		// 공유 아이디 — 메인보드 PACKET_ID(121)와 같아야 통신됨 (기존 20 → 121)
 #define PHYMAC_PDUOFFSET_RXID          				0		// packet 내부 아이디 offset
 /* USER CODE END PD */
 
