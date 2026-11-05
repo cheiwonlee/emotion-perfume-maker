@@ -184,6 +184,7 @@ def setDeviceStatus(request):
         return JsonResponse({"message": "Method Not Allowed"}, status=405)
 
 
+@csrf_exempt
 def setMood(request):
     """
     dataCollector.py에서 새로운 Mood Code ID(문자열 형태)를 받아 전역 변수에 임시 저장합니다.
@@ -224,16 +225,11 @@ def setPerfume(request): # setProx 함수 이름을 setPerfume으로 변경
 
             print(f"[PERFUME RECEIVE] Name: {name}, Value: {raw_value}")
             
-            # DB 저장을 위한 Boolean 값 변환 (기존 setProx 로직 유지)
-            value = raw_value in ['1', 'true', 'True', 'TRUE', '1.0'] 
-            
-            # 1. DB에 센서 데이터 저장
-            Prox.objects.create(
-                name=name,
-                value=value
-            )
-            
-            # 2. 전역 상태 업데이트 (index.html 표시용)
+            # [수정] 예전에는 주입량을 Boolean 으로 바꿔 ProximitySensor(재고) 테이블에 저장했는데,
+            # 그러면 1ml 를 주입할 때마다 value=True(=부족) 로 기록돼 멀쩡한 향료가 '부족'으로 표시됐다.
+            # 재고(부족/충분)는 수위 센서(setWaterStatus)만 기록하고, 여기서는 최근 주입 정보만 갱신한다.
+
+            # 전역 상태 업데이트 (index.html 표시용)
             if name and raw_value:
                 LATEST_PERFUME_ACTION = (name, raw_value)
             
