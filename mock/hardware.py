@@ -88,6 +88,7 @@ class VirtualTouchLCD:
         self.on_screen = on_screen
         self._buffer = []
         self._touches = queue.Queue()
+        self.screen = ("BOOT", [])  # 마지막으로 그려진 화면 (title, [(y, x, text), ...])
 
     # --- 펌웨어 쪽 -----------------------------------------------------------
     def clear(self):
@@ -97,8 +98,9 @@ class VirtualTouchLCD:
         self._buffer.append((y, x, text[:16]))  # 실제 LCD 도 16글자까지만 그림
 
     def flush(self, title: str):
+        self.screen = (title, sorted(self._buffer))
         if self.on_screen:
-            self.on_screen(title, sorted(self._buffer))
+            self.on_screen(*self.screen)
 
     def touch_pending(self) -> bool:
         """PB7 터치 인터럽트 핀이 LOW 인지"""
