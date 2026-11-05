@@ -57,6 +57,7 @@ function showChooser() {
   $("mode-btn").hidden = true;
   $("mode-label").hidden = true;
   $("serial-btn").hidden = true;
+  $("lcd-link").hidden = true;
   $("link").hidden = true;
   $("chooser").hidden = false;
 
@@ -92,7 +93,9 @@ async function start(nextMode, { userClick = false } = {}) {
   setOfflineHint(def.offline);
 
   source = def.create();
+  $("lcd-link").href = mode === "server" ? `lcd.html?source=server&api=${encodeURIComponent(apiBase)}` : "lcd.html?source=virtual";
   source.start((state) => {
+    $("lcd-link").hidden = !state?.mock; // 가상 보드가 있을 때만 (실제 보드는 진짜 LCD 를 씀)
     if (state) render(state);
     else renderUnreachable("서버에 연결할 수 없어요. run.py가 켜져 있는지 확인하세요.");
     if (mode === "serial") updateSerialButton(state);

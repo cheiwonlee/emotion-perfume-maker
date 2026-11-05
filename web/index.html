@@ -17,6 +17,7 @@
     <div class="top-right">
       <p class="link" id="link"><span class="dot"></span><span id="link-text"></span></p>
       <button type="button" class="ghost" id="serial-btn" hidden>USB로 연결</button>
+      <a class="ghost" id="lcd-link" target="perfume-maker-lcd" hidden>가상 LCD 열기</a>
       <p class="mode-label" id="mode-label" hidden></p>
       <button type="button" class="text-btn" id="mode-btn" hidden>모드 바꾸기</button>
     </div>
@@ -51,55 +52,49 @@
   </section>
 
   <main id="dashboard" hidden>
-    <section class="now" aria-live="polite">
-      <div class="mood">
-        <p class="mood-label" id="mood-label"></p>
-        <h1 class="mood-word" id="mood-word">아직 고른 기분이 없어요</h1>
-        <p class="activity" id="activity">보드 신호를 기다리는 중</p>
+    <section class="status" id="status" aria-live="polite" aria-labelledby="headline">
+      <div class="status-top">
+        <p class="chip" id="chip">대기</p>
+        <ol class="stages" id="stages" aria-label="진행 단계">
+          <li data-stage="SCREEN_START">대기</li>
+          <li data-stage="SCREEN_MOODSELECT">기분 선택</li>
+          <li data-stage="SCREEN_CONFIRM">확인</li>
+          <li data-stage="SCREEN_BLENDING">주입</li>
+          <li data-stage="SCREEN_FINISH">완료</li>
+        </ol>
       </div>
-
-      <div class="formula" id="formula">
-        <h2 class="formula-title" id="formula-title">레시피</h2>
-        <table>
-          <thead><tr><th scope="col">향료</th><th scope="col" class="num">레시피</th><th scope="col" class="num">주입</th><th scope="col">상태</th></tr></thead>
-          <tbody id="formula-rows"></tbody>
-        </table>
-        <p class="formula-foot" id="formula-foot"></p>
+      <div class="status-main">
+        <div>
+          <h1 class="headline" id="headline">보드 신호를 기다리는 중</h1>
+          <p class="subline" id="subline"></p>
+        </div>
+        <p class="percent" id="percent" hidden><span id="percent-num">0</span>%</p>
       </div>
+      <div class="progress" id="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" hidden></div>
+      <ol class="legend" id="legend" hidden></ol>
     </section>
 
-    <section class="organ" aria-labelledby="organ-title">
-      <div class="section-head">
-        <h2 id="organ-title">향료 통</h2>
-        <p class="hint" id="organ-hint">수위 센서가 잔량 부족을 감지하면 빨간색으로 표시돼요.</p>
-      </div>
-      <ol class="vials" id="vials"></ol>
-    </section>
+    <div class="panels">
+      <section class="panel" aria-labelledby="tanks-title">
+        <div class="panel-head">
+          <h2 id="tanks-title">향료 통</h2>
+          <div class="sim-controls" id="sim-controls" hidden>
+            <label class="switch"><input type="checkbox" id="auto"> <span>자동 시연</span></label>
+            <button type="button" class="text-btn" id="refill">모두 채우기</button>
+          </div>
+        </div>
+        <ol class="vials" id="vials"></ol>
+        <p class="hint panel-foot" id="organ-hint"></p>
+      </section>
 
-    <section class="lower">
-      <div class="log">
-        <div class="section-head">
-          <h2>제조 기록</h2>
+      <section class="panel" aria-labelledby="log-title">
+        <div class="panel-head">
+          <h2 id="log-title">제조 기록</h2>
           <p class="hint" id="today"></p>
         </div>
         <ol class="blends" id="blends"></ol>
-      </div>
-
-      <div class="device" id="device" hidden>
-        <div class="section-head">
-          <h2>가상 터치 LCD</h2>
-          <p class="hint">실제 보드 대신 이 화면을 눌러 조작해요.</p>
-        </div>
-        <div class="unit">
-          <div class="lcd" id="lcd" role="group" aria-label="가상 터치 LCD"></div>
-        </div>
-        <div class="controls">
-          <label class="switch"><input type="checkbox" id="auto"> <span>자동 시연</span></label>
-          <button type="button" class="ghost" id="refill">향료 통 모두 채우기</button>
-        </div>
-        <p class="hint" id="speed"></p>
-      </div>
-    </section>
+      </section>
+    </div>
   </main>
 
   <script type="module" src="js/app.js"></script>

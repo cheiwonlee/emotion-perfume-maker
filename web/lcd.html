@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>가상 터치 LCD · Daily Mood Perfume Maker</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='4' fill='%232b3433'/%3E%3Crect x='8' y='8' width='16' height='16' fill='%23c9d4bf'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Gowun+Batang:wght@700&family=IBM+Plex+Sans+KR:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body class="lcd-page">
+  <div class="wrap">
+    <p class="lcd-title">터치 LCD</p>
+    <div class="unit">
+      <div class="lcd" id="lcd" role="group" aria-label="가상 터치 LCD"></div>
+    </div>
+    <p class="lcd-status" id="lcd-status"><span class="dot"></span><span id="lcd-status-text">보드를 찾는 중</span></p>
+    <p class="lcd-help" id="lcd-help">실제 기기에서 메인보드에 연결된 터치 LCD를 흉내 낸 화면이에요. 대시보드 창 옆에 두고 눌러 보세요.</p>
+  </div>
+  <script type="module" src="js/lcd.js"></script>
+</body>
+</html>
