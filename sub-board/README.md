@@ -11,15 +11,17 @@ STM32에서 SX1272 계열 LoRa 모듈로 작업 명령을 수신하여 4대의 �
 - Motor 2 (Cedarwood): PB12, PA11, PA12, PC5 — `ExtraMotorPins_Init()` 에서 설정
 - Motor 3 (Vanilla): PC3, PC2, PB0, PA4 — `ExtraMotorPins_Init()` 에서 설정
 - Motor 4 (Bergamot): PC12, PC10, PD2, PC11 — `ExtraMotorPins_Init()` 에서 설정
-- 수위 센서: `LEVEL_SENSORS[]` 표. 현재 1번(Lavender) 통 = PB2(`Prox`) 만 연결, LOW 신호 = 액체 감지
-  - 다른 통에 센서를 달면 표의 해당 칸에 `{ 포트, 핀 }` 을 넣고 CubeMX 에서 그 핀을 GPIO_Input 으로 설정
-  - 센서가 없는 통은 '알 수 없음'으로 보고되어 대시보드에 표시되지 않음
+- 수위 센서 (`LEVEL_SENSORS[]` 표, LOW 신호 = 액체 감지)
+  - 1 Lavender: PB2 (CubeMX 의 `Prox`)
+  - 2 Cedarwood: PC4 / 3 Vanilla: PC6 / 4 Bergamot: PC8 — `ExtraLevelSensors_Init()` 에서 입력 설정
+  - LoRa 쉴드가 쓰는 Arduino 헤더 핀을 피해 모르포 커넥터의 빈 핀을 골랐음. 배선이 다르면 표만 수정
 
 ## 패킷 포맷
 - `Rx_ID` = 121 (메인보드 `PACKET_ID` 와 같아야 함)
 - 수신: `[Rx_ID(1)] + [sensor_id:int32][rotation_ml:float32]` (총 9 바이트)
 - 완료 응답: `[Rx_ID(1)] + "DONE"(4) + [주입 후 수위(1)]` (총 6 바이트, 수위 1 충분 / 0 부족 / 0xFF 센서 없음)
 - 부족 응답: `[Rx_ID(1)] + "LOW"(3) + [sensor_id(1)]` (총 5 바이트) — 모터를 돌리지 않음
+- 수위 조회: `[Rx_ID(1)] + "LVL?"` (5 바이트) → 응답 `[Rx_ID(1)] + "LVL" + [통1][통2][통3][통4]` (8 바이트)
 
 ## 소프트웨어 흐름
 1. 시작 시 Radio(LoRa) 초기화 및 콜백 등록
@@ -32,6 +34,7 @@ STM32에서 SX1272 계열 LoRa 모듈로 작업 명령을 수신하여 4대의 �
 ## 주요 함수
 - `RunJob(job)`: 수위 확인, 모터 구동, DONE/LOW 응답
 - `ReadLevel(sensor_id)`: 수위 센서 값 (LEVEL_OK / LEVEL_LOW / LEVEL_UNKNOWN)
+- `SendLevels()`: 수위 조회에 네 통의 값을 한 번에 응답
 - `set_coils(motor_id, a,b,c,d)`: 지정한 모터의 4핀을 제어 (`MOTOR_PINS[]` 표)
 - `step_steps(motor_id, steps, delay_ms)`: half-step 시퀀스로 회전, 끝나면 코일 전류 차단
 - `OnRxDone(payload, size, rssi, snr)`: 수신 콜백. 작업만 받아 두고 바로 반환

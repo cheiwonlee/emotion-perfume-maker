@@ -9,12 +9,13 @@
 
 | 폴더 | 원래 브랜치 | 내용 |
 |------|------------|------|
-| [`dashboard/`](dashboard/) | `Feat/DashBoard` | Django 웹 대시보드 + 시리얼 수집기(`dataCollector.py`) |
+| [`web/`](web/) | (새로 추가) | 대시보드 화면 (HTML·CSS·JS) — GitHub Pages·Vercel 에 그대로 배포, Django 도 같은 파일을 씀 |
+| [`dashboard/`](dashboard/) | `Feat/DashBoard` | Django 서버(API·제조 기록 DB) + 시리얼 수집기(`dataCollector.py`) |
 | [`main-board/`](main-board/) | `Feat/MainBoard` | STM32F446 메인보드 — 터치 LCD UI, 회전판 모터, LoRa 마스터 (STM32CubeIDE 프로젝트) |
 | [`sub-board/`](sub-board/) | `Feat/SubBoard` | STM32F446 서브보드 — LoRa로 명령을 받아 주사기 모터 구동 (STM32CubeIDE 프로젝트) |
 | [`mock/`](mock/) | (새로 추가) | 위 하드웨어 전체를 흉내 내는 **가상 보드** — 부품 없이 시스템 전체를 실행 |
 | `run.py` | (새로 추가) | 전체 실행기 — 명령 하나로 웹 서버·가상 보드·수집기를 함께 실행 |
-| `tests/` | (새로 추가) | 가상 보드 테스트 |
+| `tests/` | (새로 추가) | 가상 보드(Python)·웹 대시보드(JS) 테스트 |
 | `scripts/build_firmware.sh` | (새로 추가) | CubeIDE 없이 두 펌웨어가 컴파일되는지 확인 (`arm-none-eabi-gcc` 필요) |
 
 각 브랜치의 커밋 기록은 해당 폴더 아래로 옮겨 그대로 보존했습니다. (`git log -- main-board/` 로 확인 가능)
@@ -22,24 +23,51 @@
 ## 🧩 시스템 구조
 
 ```
- [터치 LCD] ──UART3── Main Board ◄──── LoRa 922.1MHz ────► Sub Board ── 주사기 모터 ×4
-                       │ 회전판 모터                                    (향료 주입)
-                       │ 수위 센서
+ [터치 LCD] ──UART3── Main Board ◄──── LoRa 922.1MHz ────► Sub Board ── 주사기 모터 ×4, 수위 센서 ×4
+                       │ 회전판 모터
                        │
-                    UART2 (USB 시리얼, 115200)
-                       ▼
-               dataCollector.py ──HTTP POST──► Django ──► 대시보드 (http://127.0.0.1:8000/sensor/)
+                    UART2 (USB 시리얼, 115200) — STATUS / MOOD / PERFUME / WATER 줄
+                       │
+         ┌─────────────┴──────────────────────────┐
+         ▼                                        ▼
+  브라우저 (Web Serial) 로 직접 읽기      dataCollector.py → Django → DB
+         │                                        │
+         └──────────► 대시보드 (web/) ◄────────────┘
 ```
 
-## 🚀 실행
+## 🌐 바로 체험하기 (배포된 페이지)
+
+대시보드는 서버 없이 브라우저만으로 동작합니다. 페이지에 들어가면 연결 방법을 고릅니다.
+
+| 모드 | 설명 | 쓸 수 있는 곳 |
+|------|------|--------------|
+| **가상 보드** | 메인보드·서브보드·LoRa·센서를 브라우저 안에서 흉내 냅니다. 가상 LCD 를 눌러 향수를 만들어 보세요. | 어디서나 |
+| **실제 보드 (USB)** | 메인보드를 USB 로 꽂고 포트를 고르면, 브라우저가 시리얼 출력을 직접 읽습니다. | 데스크톱 Chrome·Edge |
+| **로컬 서버** | `python run.py` 로 띄운 Django 서버의 상태를 보여 주고, 제조 기록을 DB 에 남깁니다. | `run.py` 로 연 페이지 |
+
+`?mode=virtual`, `?mode=serial`, `?mode=server` 를 주소 뒤에 붙이면 고르는 화면 없이 바로 들어갑니다. 제조 기록은 모드별로 브라우저(localStorage)에 남습니다.
+
+### 배포하기
+
+**GitHub Pages** (이 레포에 설정 완료)
+1. 저장소 **Settings → Pages → Build and deployment → Source** 를 **GitHub Actions** 로 바꿉니다. (처음 한 번)
+2. **Actions → pages → Run workflow** 를 누르거나 `web/` 을 고쳐 push 하면 배포됩니다.
+3. 주소: `https://cheiwonlee.github.io/emotion-perfume-maker/`
+
+**Vercel**
+1. [vercel.com/new](https://vercel.com/new) 에서 이 저장소를 Import 합니다.
+2. 설정은 `vercel.json` 에 들어 있으니 그대로 **Deploy** 를 누르면 됩니다. (`web/` 폴더만 올라감)
+
+둘 다 HTTPS 라서 실제 보드(USB) 모드도 동작합니다.
+
+## 🚀 내 컴퓨터에서 서버와 함께 실행
 
 ```bash
 pip install -r requirements.txt
 python run.py
 ```
 
-이게 전부입니다. DB 준비 → 웹 서버 → 가상 보드 → 수집기가 한 번에 켜지고 브라우저에 대시보드가 열립니다.
-대시보드 오른쪽 아래 **가상 터치 LCD** 를 눌러 기분을 고르고 Start 를 누르면, 향료 통의 잔량이 줄고 레시피 진행과 제조 기록이 실시간으로 바뀝니다. 향료 통 아래 `비우기` 로 재고 부족 상황도 만들어 볼 수 있습니다.
+DB 준비 → 웹 서버 → 가상 보드 → 수집기가 한 번에 켜지고 브라우저에 대시보드가 **로컬 서버** 모드로 열립니다. 이 경우 가상 보드는 Python(`mock/`)으로 돌고, 제조 기록은 Django DB 에 저장됩니다.
 
 | 명령 | 설명 |
 |------|------|
@@ -52,33 +80,47 @@ python run.py
 
 그 밖의 가상 보드 옵션: `--loss 0.2` (LoRa 패킷 20% 유실), `--sub-id 20` (예전 코드의 LoRa ID 불일치 재현), `--capacity 30` (향료 통 용량 ml)
 
-### 가상 보드(mock)는 어떻게 동작하나요?
+### 가상 보드는 어떻게 동작하나요?
 
-수집기는 실제로는 `serial.Serial` 로 보드를 읽습니다. 가상 보드는 같은 `readline()` 을 가진 **가상 시리얼**을 제공하므로, 수집기와 Django 는 실제 보드를 쓸 때와 같은 코드로 동작합니다.
+가상 보드는 펌웨어와 같은 순서로 동작하고, 같은 LoRa 패킷(바이트 단위)과 같은 시리얼 출력을 만듭니다. 그래서 대시보드·수집기는 실제 보드일 때와 같은 코드로 동작합니다.
+같은 가상 보드가 두 언어로 있습니다: 서버와 함께 돌 때는 `mock/`(Python), 배포된 페이지에서는 `web/js/virtual-board.js`(JavaScript).
 
 | 파일 | 대응하는 실제 부품 / 코드 |
 |------|-------------------------|
-| `mock/main_board.py` | `main-board/Core/Src/main.c` — 화면 상태 머신, 터치 키 해석, 레시피, 회전판 이동, DONE 대기 |
-| `mock/sub_board.py` | `sub-board/Core/Src/main.c` — 패킷 검사, `ml × 4096` 스텝 회전, DONE 응답 |
-| `mock/protocol.py` | LoRa 패킷 형식 — C 구조체와 바이트 단위로 동일 |
+| `mock/main_board.py` | `main-board/Core/Src/main.c` — 화면 상태 머신, 터치 키, 레시피, 회전판, 응답 대기, 수위 조회 |
+| `mock/sub_board.py` | `sub-board/Core/Src/main.c` — 수위 확인, `ml × 4096` 스텝 회전, DONE/LOW/LVL 응답 |
+| `mock/protocol.py` | LoRa 패킷 형식 |
 | `mock/lora.py` | SX1272 LoRa 모듈 (지연·유실) |
 | `mock/hardware.py` | 스테핑 모터, 향료 통 + 수위 센서, 터치 LCD |
 | `mock/serial_port.py` | UART2 (USB 시리얼) |
 | `mock/runtime.py` | 대시보드의 가상 LCD 버튼과 가상 보드를 연결 |
 
+### LoRa 패킷 (메인 ↔ 서브)
+
+| 패킷 | 방향 | 형식 |
+|------|------|------|
+| 작업 지시 | 메인 → 서브 | `[121][sensor_id:int32][ml:float32]` |
+| 완료 | 서브 → 메인 | `[121]"DONE"[주입 후 수위]` |
+| 부족으로 거절 | 서브 → 메인 | `[121]"LOW"[sensor_id]` |
+| 수위 조회 | 메인 → 서브 | `[121]"LVL?"` |
+| 수위 응답 | 서브 → 메인 | `[121]"LVL"[통1][통2][통3][통4]` |
+
+수위 값: `1` 충분, `0` 부족, `0xFF` 센서 없음. 메인보드는 부팅할 때, 시작 화면으로 돌아올 때, 시작 화면에서 30초마다 수위를 조회해 `WATER_X/O : n` 으로 출력합니다.
+
 ### 실제 보드로 실행하기
 
 1. `main-board/`, `sub-board/` 를 STM32CubeIDE 에서 열어 빌드하고 보드에 올립니다.
-2. 메인보드를 USB 로 연결하고 `python run.py --real` 을 실행합니다.
+2. 메인보드를 USB 로 연결하고, 배포된 페이지에서 **실제 보드 (USB)** 를 고르거나 `python run.py --real` 을 실행합니다.
 
 ## 🧪 테스트
 
 ```bash
-cd dashboard && python manage.py test     # 대시보드 + 수집기 파서 (13개)
-python -m unittest discover tests         # 가상 보드 (6개)
+cd dashboard && python manage.py test     # Django + 수집기 파서 (13개)
+python -m unittest discover tests         # 가상 보드 Python (7개)
+node --test tests/web.test.mjs            # 웹 대시보드 파서·저장소 (4개)
 scripts/build_firmware.sh                 # 펌웨어 컴파일 확인 (arm-none-eabi-gcc 필요)
 ```
-GitHub 에 push 하면 Actions 에서 세 가지 모두 자동으로 실행됩니다.
+GitHub 에 push 하면 Actions 에서 모두 자동으로 실행됩니다.
 
 ## 🔍 코드 리뷰 — 무엇을 왜 바꿨나
 
@@ -112,7 +154,7 @@ GitHub 에 push 하면 Actions 에서 세 가지 모두 자동으로 실행됩�
 - **보낸 패킷이 끊길 수 있음** → 메인보드가 `Radio.Send()` 직후 바로 `Radio.Rx()` 로 바꿔, 아직 나가는 중인 패킷이 잘릴 수 있었습니다. 송신 완료를 기다린 뒤 수신합니다.
 - **서브보드가 죽으면 메인보드도 영원히 대기** → 응답 대기에 시간 제한을 두고, 넘으면 LCD 에 안내 후 기분 선택 화면으로 돌아갑니다.
 - **모터 2~4번 핀 미구현** → README 핀맵대로 `MOTOR_PINS[]` 표와 `ExtraMotorPins_Init()` 을 추가했습니다. 핀은 기존에 쓰던 SPI·LoRa·UART 핀과 겹치지 않는 것을 확인했습니다. 모터를 다 돌리면 코일 전류를 끊어 발열을 막고, 모터마다 스텝 위치를 기억합니다.
-- **수위 센서** → 서브보드가 주입 전에 해당 통의 수위를 확인해 부족하면 `LOW` 로 거절하고, 주입 후 수위를 `DONE` 응답에 실어 보냅니다. 메인보드는 이를 `WATER_X/O : n` 으로 출력해 대시보드에 나타납니다.
+- **수위 센서** → 네 통 모두 센서를 달았다고 보고 구현했습니다. 서브보드가 주입 전에 해당 통의 수위를 확인해 부족하면 `LOW` 로 거절하고, 주입 후 수위를 `DONE` 응답에 실어 보냅니다. 메인보드는 부팅·대기 중에도 `LVL?` 로 네 통을 조회합니다. 모두 `WATER_X/O : n` 으로 출력돼 대시보드에 나타납니다.
 - **대시보드용 출력** → `STATUS` / `MOOD` / `PERFUME` / `WATER_X` / `WATER_O` 를 `main.c` 에 추가했습니다. newlib-nano 의 float `printf` 가 꺼져 있어(`%.2f` 가 비어서 찍힘) 숫자는 `%d` 로 출력합니다.
 - 향료별로 복사돼 있던 `LavenderMove` ~ `BergamotMove` 4개 함수를 `InjectPerfume()` 하나로, 기분별 `switch` 를 `RECIPES[][]` 표로 바꿨습니다.
 
@@ -124,7 +166,8 @@ GitHub 에 push 하면 Actions 에서 세 가지 모두 자동으로 실행됩�
 
 펌웨어는 두 보드 모두 경고 없이 컴파일되는 것까지 확인했습니다. 실제 하드웨어에서는 아래를 확인해 주세요.
 
-1. **수위 센서 위치와 극성** — 서브보드의 `PB2`(`Prox`) 를 1번(Lavender) 통 센서로 연결했고, 기존 테스트 코드 주석대로 LOW = 액체 감지로 처리했습니다. 실제 배선이 다르면 `sub-board/Core/Src/main.c` 의 `LEVEL_SENSORS[]` 와 `LEVEL_LIQUID_STATE` 만 바꾸면 됩니다. 나머지 세 통은 센서를 달면 같은 표에 핀을 추가합니다.
-2. **모터 2~4번 배선** — `sub-board/README.md` 의 핀맵대로 구현했습니다. 실제 배선과 다르면 `MOTOR_PINS[]` 표만 고치면 됩니다.
-3. **메인보드 `PA15`(`PROX_SENSOR`)** — 정의만 있고 쓰이지 않습니다. 향료 통이 아니라 회전판 위 향수병 쪽 센서로 보여 그대로 두었습니다.
-4. **응답 대기 시간** — 1ml 당 4096 스텝 × 2ms + 10초로 잡았습니다. 모터 속도를 바꾸면 `InjectPerfume()` 의 `timeout_ms` 도 함께 조정하세요.
+1. **수위 센서 핀** — 네 통 모두 센서가 있다고 가정했습니다. 1번(Lavender)은 기존에 설정된 `PB2`, 2~4번은 LoRa 쉴드가 쓰는 Arduino 헤더를 피해 모르포 커넥터의 빈 핀 `PC4`·`PC6`·`PC8` 에 연결한다고 정했습니다. 실제 배선이 다르면 `sub-board/Core/Src/main.c` 의 `LEVEL_SENSORS[]` 표만 고치면 됩니다.
+2. **센서 극성·풀업** — 기존 테스트 코드 주석대로 LOW = 액체 감지(`LEVEL_LIQUID_STATE`), 풀업 없음(`PB2` 와 같은 설정)으로 했습니다. 센서 출력이 오픈 컬렉터라면 `ExtraLevelSensors_Init()` 의 `GPIO_NOPULL` 을 `GPIO_PULLUP` 으로 바꾸세요.
+3. **모터 2~4번 배선** — `sub-board/README.md` 의 핀맵대로 구현했습니다. 다르면 `MOTOR_PINS[]` 표를 고치세요.
+4. **메인보드 `PA15`(`PROX_SENSOR`)** — 정의만 있고 쓰이지 않습니다. 향료 통이 아니라 회전판 쪽 센서로 보여 그대로 두었습니다.
+5. **응답 대기 시간** — 1ml 당 4096 스텝 × 2ms + 10초로 잡았습니다. 모터 속도를 바꾸면 `InjectPerfume()` 의 `timeout_ms` 도 함께 조정하세요.
