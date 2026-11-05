@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Django 로컬 DB (python manage.py migrate 로 새로 만들어짐)
+*.sqlite3
+
+# STM32CubeIDE 빌드 결과물 (IDE에서 빌드하면 다시 생김)
+main-board/Debug/
+sub-board/Debug/
+main-board/Release/
+sub-board/Release/
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
