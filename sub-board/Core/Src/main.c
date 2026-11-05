@@ -137,16 +137,18 @@ static RadioEvents_t RadioEvents;
 //  LoRa 수신 콜백(OnRxDone)은 GPIO 인터럽트(EXTI, 우선순위 0) 안에서 불리는데 SysTick 도 우선순위 0 이라,
 //  인터럽트 안에서 모터를 돌리면 HAL_Delay 가 끝나지 않아 보드가 멈춘다.
 volatile uint8_t g_job_pending = 0;
+volatile uint8_t g_level_query_pending = 0;  // [추가] 메인보드의 수위 조회 요청
 StepingMotor_t g_job;
 
 // [추가] 향료 통 수위 센서 표 (index = sensor_id, 1 Lavender 2 Cedarwood 3 Vanilla 4 Bergamot)
 //  센서를 더 달면 해당 칸에 { 포트, 핀 } 을 넣고, 그 핀을 CubeMX 에서 GPIO_Input 으로 설정한다.
+//  2~4번은 Arduino 헤더(LoRa 쉴드가 쓰는 핀)를 피해 모르포 커넥터의 빈 핀을 골랐다.
 static const LevelSensor_t LEVEL_SENSORS[5] = {
     { NULL, 0 },                    // 0: 사용 안 함
-    { Prox_GPIO_Port, Prox_Pin },   // 1: Lavender — CubeMX 에 'Prox'(PB2) 로 설정된 센서
-    { NULL, 0 },                    // 2: Cedarwood
-    { NULL, 0 },                    // 3: Vanilla
-    { NULL, 0 },                    // 4: Bergamot
+    { Prox_GPIO_Port, Prox_Pin },   // 1: Lavender  — PB2, CubeMX 에 'Prox' 로 설정된 센서
+    { GPIOC, GPIO_PIN_4 },          // 2: Cedarwood — PC4  (ExtraLevelSensors_Init 에서 입력 설정)
+    { GPIOC, GPIO_PIN_6 },          // 3: Vanilla   — PC6
+    { GPIOC, GPIO_PIN_8 },          // 4: Bergamot  — PC8
 };
 #define LEVEL_LIQUID_STATE  GPIO_PIN_RESET  // 기존 테스트 코드 기준: RESET 이면 "water on"(액체 감지)
 #define LEVEL_LOW           0
@@ -196,6 +198,8 @@ int __io_putchar(int ch);
 uint8_t ReadLevel(int sensor_id);
 void RunJob(const StepingMotor_t *job);
 void ExtraMotorPins_Init(void);
+void ExtraLevelSensors_Init(void);
+void SendLevels(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -277,6 +281,11 @@ int main(void)
 		  StepingMotor_t job = g_job;
 		  g_job_pending = 0;
 		  RunJob(&job);
+	  }
+	  else if (g_level_query_pending)
+	  {
+		  g_level_query_pending = 0;
+		  SendLevels();
 	  }
 
 
@@ -561,6 +570,7 @@ static void MX_GPIO_Init(void)
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
   ExtraMotorPins_Init();
+  ExtraLevelSensors_Init();
 
   /* USER CODE END MX_GPIO_Init_2 */
 }
@@ -631,6 +641,26 @@ void step_steps(int motor_id, int steps, int delay_ms){
   set_coils(motor_id, 0, 0, 0, 0);  // 다 돌면 코일 전류를 끊어 모터·드라이버 발열 방지
 }
 
+// [추가] 2~4번 통 수위 센서 핀을 입력으로 설정 (1번 PB2 는 CubeMX 가 설정함, 같은 설정을 사용)
+void ExtraLevelSensors_Init(void){
+  GPIO_InitTypeDef init = {0};
+  init.Mode = GPIO_MODE_INPUT;
+  init.Pull = GPIO_NOPULL;  // PB2 와 같은 설정. 센서 출력이 오픈 컬렉터라면 GPIO_PULLUP 으로 바꿀 것
+  for (int id = 2; id <= 4; id++) {
+    init.Pin = LEVEL_SENSORS[id].pin;
+    HAL_GPIO_Init(LEVEL_SENSORS[id].port, &init);
+  }
+}
+
+// [추가] 수위 조회 응답: [ID]"LVL"[통1][통2][통3][통4]
+void SendLevels(void){
+  uint8_t reply[8];
+  reply[0] = Rx_ID;
+  memcpy(reply + 1, "LVL", 3);
+  for (int id = 1; id <= 4; id++) reply[3 + id] = ReadLevel(id);
+  Radio.Send(reply, 8);
+}
+
 // [추가] 수위 센서 읽기
 uint8_t ReadLevel(int sensor_id){
   if (sensor_id < 1 || sensor_id > 4 || LEVEL_SENSORS[sensor_id].port == NULL) return LEVEL_UNKNOWN;
@@ -685,6 +715,11 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
         memcpy(&g_job, Buffer + 1, sizeof(StepingMotor_t));
         g_job_pending = 1;  // 실제 동작은 메인 루프에서 (인터럽트 안에서 HAL_Delay 금지)
         State = IDLE;       // 응답을 보낼 때까지는 수신 대기 안 함
+    }
+    else if (Buffer[PHYMAC_PDUOFFSET_RXID] == Rx_ID && BufferSize == 5 && memcmp(Buffer + 1, "LVL?", 4) == 0)
+    {
+        g_level_query_pending = 1;  // [추가] 수위 조회 → 메인 루프에서 응답
+        State = IDLE;
     }
     else
     {

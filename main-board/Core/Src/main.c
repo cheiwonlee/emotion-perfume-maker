@@ -266,6 +266,54 @@ SyringeReply_t WaitForSyringeReply(uint32_t timeout_ms)
     return REPLY_TIMEOUT;
 }
 
+// [추가] 송신이 끝날 때까지 기다림 (Radio.Send 는 바로 반환되므로, 곧바로 Radio.Rx 를 부르면
+//  아직 나가는 중인 패킷이 끊길 수 있음). OnTxDone/OnTxTimeout 이 State 를 IDLE 로 바꾼다.
+void WaitTxDone(void)
+{
+    uint32_t tx_start = HAL_GetTick();
+    while (State == TX && HAL_GetTick() - tx_start < 3500) {
+        HAL_Delay(1);
+    }
+}
+
+// [추가] 향료 통 4개의 수위를 서브보드에 물어보고 대시보드용으로 출력
+//  요청: [ID]"LVL?"   응답: [ID]"LVL"[통1][통2][통3][통4]  (값: 1 충분 / 0 부족 / 0xFF 센서 없음)
+//  부팅 직후, 시작 화면에 들어올 때, 시작 화면에서 30초마다 호출 → 통을 다시 채운 것도 대시보드에 반영됨
+uint32_t lastLevelQuery = 0;
+#define LEVEL_QUERY_INTERVAL_MS 30000
+
+void QueryLevels(void)
+{
+    lastLevelQuery = HAL_GetTick();
+    Buffer[0] = PACKET_ID;
+    memcpy(Buffer + 1, "LVL?", 4);
+    State = TX;
+    Radio.Send(Buffer, 5);
+    WaitTxDone();
+
+    uint32_t start = HAL_GetTick();
+    while (HAL_GetTick() - start < 2000)
+    {
+        State = IDLE;
+        Radio.Rx(RX_TIMEOUT_VALUE);
+        while (State != RX && State != RX_TIMEOUT && State != RX_ERROR) {
+            HAL_Delay(10);
+        }
+        if (State != RX) continue;
+        State = IDLE;
+        if (Buffer[0] == Rx_ID && BufferSize >= 8 && strncmp((char*)&Buffer[1], "LVL", 3) == 0)
+        {
+            for (int sensor_id = 1; sensor_id <= 4; sensor_id++) {
+                uint8_t level = Buffer[3 + sensor_id];
+                if (level == LEVEL_LOW)     printf("WATER_X : %d\n", sensor_id);  // [대시보드]
+                else if (level == LEVEL_OK) printf("WATER_O : %d\n", sensor_id);  // [대시보드]
+            }
+            return;
+        }
+    }
+    printf("No level reply from syringe board\n");
+}
+
 // --- [추가] 패킷 생성 함수 (주사기 모터 코드와 호환) ---
 uint16_t PrepareTxPacket(int sensor_id, float rotation_ml)
 {
@@ -342,12 +390,7 @@ SyringeReply_t InjectPerfume(int sensor_id, float ml)
     printf("sensor_id: %d, rotation_ml: %d\n", sensor_id, (int)ml);
     State = TX;
     Radio.Send(Buffer, packetSize);
-    // [추가] 송신이 끝날 때까지 기다린 뒤 수신으로 전환 (Radio.Send 는 바로 반환되므로,
-    //  곧바로 Radio.Rx 를 부르면 아직 나가는 중인 패킷이 끊길 수 있음). OnTxDone/OnTxTimeout 이 State 를 IDLE 로 바꾼다.
-    uint32_t tx_start = HAL_GetTick();
-    while (State == TX && HAL_GetTick() - tx_start < 3500) {
-        HAL_Delay(1);
-    }
+    WaitTxDone();  // 송신이 끝난 뒤 수신으로 전환
 
     // 서브보드는 1ml 에 4096 스텝, 스텝당 1ms 이상 → 넉넉하게 2배 + 10초
     uint32_t timeout_ms = (uint32_t)(ml * ONE_CYCLE * 2) + 10000;
@@ -676,7 +719,7 @@ int main(void) {
         if (needsRedraw) {
             needsRedraw = 0;
             switch (currentState) {
-            case SCREEN_START:       Draw_Screen_Start(); break;
+            case SCREEN_START:       Draw_Screen_Start(); QueryLevels(); break;
             case SCREEN_MOOD_SELECT: Draw_Screen_MoodSelect(); break;
             case SCREEN_CONFIRM:     Draw_Screen_Confirm(selectedMood); break;
             case SCREEN_BLENDING:
@@ -707,6 +750,12 @@ int main(void) {
         }
 
         // ★ 기존의 menu/스위치(LavenderMove/CedarwoodMove 호출 부분)는 삭제함
+
+        // 3. [추가] 시작 화면에서 기다리는 동안 주기적으로 향료 통 수위 확인
+        if (currentState == SCREEN_START && !needsRedraw &&
+            HAL_GetTick() - lastLevelQuery > LEVEL_QUERY_INTERVAL_MS) {
+            QueryLevels();
+        }
 
         HAL_Delay(10);
     }
