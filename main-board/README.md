@@ -37,7 +37,7 @@
 ```
 STATUS : SCREEN_START | SCREEN_MOODSELECT | SCREEN_CONFIRM | SCREEN_BLENDING | SCREEN_FINISH
 MOOD : 2
-PERFUME : Lavender : 4
+PERFUME : Lavender : 4     (주입이 끝난 뒤에만 출력)
 WATER_X : 3        (3번 향료 부족)
 WATER_O : 3        (3번 향료 충분)
 ```

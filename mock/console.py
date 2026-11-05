@@ -55,7 +55,7 @@ def run_mood_once(system, mood):
     wait_state(system, [SCREEN_CONFIRM])
     lcd.press(KEY_START)
     time.sleep(0.5)
-    wait_state(system, [SCREEN_FINISH, SCREEN_MOOD_SELECT])
+    wait_state(system, [SCREEN_FINISH, SCREEN_START])
 
 
 class AutoDemo:

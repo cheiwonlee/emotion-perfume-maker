@@ -35,6 +35,13 @@ function renderNow(s) {
   } else if (blend && blend.active) {
     const doing = blend.steps.find((st) => st.planned_ml && st.injected_ml == null);
     if (doing) activity = `<strong>${esc(doing.perfume)} ${ml(doing.planned_ml)}</strong>를 넣고 있어요`;
+  } else {
+    // 향료 부족 알림: 부족한 통을 알려 주고 채운 뒤 처음부터 다시 하도록 안내 (LCD 도 시작 화면으로 돌아가 있음)
+    const low = s.mock ? s.mock.tanks.filter((t) => t.is_low).map((t) => t.name)
+      : s.stock.filter((st) => st.is_low).map((st) => st.name);
+    if (low.length) {
+      activity = `<strong class="alert">${esc(low.join(", "))} 통이 부족해요.</strong> 채운 뒤 처음부터 다시 시작해 주세요.`;
+    }
   }
   $("activity").innerHTML = online ? activity : esc(activity);
   renderFormula(s);

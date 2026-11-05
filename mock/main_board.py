@@ -179,7 +179,7 @@ class MainBoard:
         for sensor_id, ml in zip((1, 2, 3, 4), recipe):
             reply = self.inject_perfume(sensor_id, ml)
             if reply != REPLY_DONE:
-                # 향료 부족 / 서브보드 무응답 → 제조를 멈추고 기분 선택 화면으로
+                # 향료 부족 / 서브보드 무응답 → 제조를 멈추고 LCD 를 시작 화면으로 초기화
                 name = protocol.PERFUMES[sensor_id]
                 if reply == REPLY_LOW:
                     self.printf(f"[Blending] {name} is LOW - stopped")
@@ -189,7 +189,8 @@ class MainBoard:
                     self.draw_screen_message("No reply from", "syringe board")
                 self.clock.delay(2500)
                 self.reset_motor()
-                self.current_state, self.needs_redraw = SCREEN_MOOD_SELECT, True
+                self.selected_mood = 0
+                self.current_state, self.needs_redraw = SCREEN_START, True
                 return
 
         self.printf(">>> Blending Complete! <<<")
@@ -206,13 +207,15 @@ class MainBoard:
         self.rotary.move_steps(int(1024 * move_angle / 90), 2)
         self.current_angle = (self.current_angle + move_angle + 360) % 360
 
-        self.printf(f"PERFUME : {protocol.PERFUMES[sensor_id]} : {int(ml)}")  # [대시보드]
         self.printf(f"sensor_id: {sensor_id}, rotation_ml: {int(ml)}")
         self._drain_rx()
         self.radio.send(protocol.build_job_packet(self.packet_id, sensor_id, float(ml)))
 
         timeout_ms = ml * VirtualStepperMotor.ONE_CYCLE * 2 + 10000
         reply, level = self.wait_for_syringe_reply(timeout_ms)
+
+        if reply == REPLY_DONE:  # 실제로 주입이 끝났을 때만 주입량 보고
+            self.printf(f"PERFUME : {protocol.PERFUMES[sensor_id]} : {int(ml)}")  # [대시보드]
 
         if reply == REPLY_LOW or (reply == REPLY_DONE and level == protocol.LEVEL_LOW):
             self.printf(f"WATER_X : {sensor_id}")  # [대시보드]

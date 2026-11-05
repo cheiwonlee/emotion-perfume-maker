@@ -190,7 +190,8 @@ class MainBoard {
         this.drawMessage(...(reply === "LOW" ? ["Refill needed:", PERFUMES[id]] : ["No reply from", "syringe board"]));
         await this.clock.delay(2500);
         this.angle = 0;
-        this.state = S.MOOD_SELECT; this.needsRedraw = true;
+        this.selectedMood = 0;
+        this.state = S.START; this.needsRedraw = true; // LCD 초기화 (펌웨어와 동일)
         return;
       }
     }
@@ -206,7 +207,6 @@ class MainBoard {
     await this.clock.delay(Math.abs(Math.trunc((1024 * move) / 90)) * 2); // 회전판 이동
     this.angle = (this.angle + move + 360) % 360;
 
-    this.printf(`PERFUME : ${PERFUMES[id]} : ${Math.trunc(ml)}`);
     this.rx.clear();
     this.radio.send(jobPacket(id, ml));
 
@@ -216,6 +216,7 @@ class MainBoard {
       const p = await this.rx.get(RX_TIMEOUT_MS / this.clock.speed);
       if (!p || p[0] !== PACKET_ID) continue;
       if (p.length >= 5 && tagIs(p, "DONE")) {
+        this.printf(`PERFUME : ${PERFUMES[id]} : ${Math.trunc(ml)}`); // 주입이 끝났을 때만 보고
         const level = p.length >= 6 ? p[5] : LEVEL.UNKNOWN;
         if (level === LEVEL.LOW) this.printf(`WATER_X : ${id}`);
         else if (level === LEVEL.OK) this.printf(`WATER_O : ${id}`);
@@ -342,7 +343,7 @@ export class VirtualBoard {
     if (m.state === S.CONFIRM) { this.press("back"); await this.waitState([S.MOOD_SELECT]); }
     this.press("mood", mood); await this.waitState([S.CONFIRM]);
     this.press("start"); await sleep(500);
-    await this.waitState([S.FINISH, S.MOOD_SELECT]);
+    await this.waitState([S.FINISH, S.START]);
   }
   async autoLoop() {
     await this.waitState([S.START, S.MOOD_SELECT, S.FINISH, S.CONFIRM], 30000);

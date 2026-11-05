@@ -385,7 +385,6 @@ SyringeReply_t InjectPerfume(int sensor_id, float ml)
     MoveMotorSteps(1024 * move_angle / 90, 2);
     current_angle = (current_angle + move_angle + 360) % 360;
 
-    printf("PERFUME : %s : %d\n", perfumeNames[sensor_id], (int)ml); // [대시보드] 주입량 (newlib-nano 기본 설정은 %f 를 출력하지 않아 정수로)
     uint16_t packetSize = PrepareTxPacket(sensor_id, ml);
     printf("sensor_id: %d, rotation_ml: %d\n", sensor_id, (int)ml);
     State = TX;
@@ -395,6 +394,12 @@ SyringeReply_t InjectPerfume(int sensor_id, float ml)
     // 서브보드는 1ml 에 4096 스텝, 스텝당 1ms 이상 → 넉넉하게 2배 + 10초
     uint32_t timeout_ms = (uint32_t)(ml * ONE_CYCLE * 2) + 10000;
     SyringeReply_t reply = WaitForSyringeReply(timeout_ms);
+
+    // [대시보드] 실제로 주입이 끝났을 때만 주입량을 보고 (LOW 로 거절되면 들어가지 않았으므로 출력하지 않음)
+    //  newlib-nano 기본 설정은 %f 를 출력하지 않아 정수로
+    if (reply == REPLY_DONE) {
+        printf("PERFUME : %s : %d\n", perfumeNames[sensor_id], (int)ml);
+    }
 
     // [대시보드] 향료 통 수위 (센서가 없는 통은 출력하지 않음)
     if (reply == REPLY_LOW || (reply == REPLY_DONE && g_reply_level == LEVEL_LOW)) {
@@ -464,7 +469,8 @@ void RunBlendingProcess(uint8_t mood)
         SyringeReply_t reply = InjectPerfume(sensor_id, RECIPES[mood][sensor_id - 1]);
         if (reply != REPLY_DONE)
         {
-            // [추가] 향료 부족 / 서브보드 무응답이면 제조를 멈추고 기분 선택 화면으로 돌아간다
+            // [추가] 향료 부족 / 서브보드 무응답이면 제조를 멈추고 LCD 를 시작 화면으로 초기화한다
+            //  (시작 화면에 들어가면 QueryLevels() 로 수위를 다시 보고 → 대시보드에 부족 알림)
             if (reply == REPLY_LOW) {
                 printf("[Blending] %s is LOW - stopped\n", perfumeNames[sensor_id]);
                 Draw_Screen_Message("Refill needed:", perfumeNames[sensor_id]);
@@ -474,7 +480,8 @@ void RunBlendingProcess(uint8_t mood)
             }
             HAL_Delay(2500);
             ResetMotor();
-            currentState = SCREEN_MOOD_SELECT;
+            selectedMood = 0;
+            currentState = SCREEN_START;
             needsRedraw = 1;
             return;
         }

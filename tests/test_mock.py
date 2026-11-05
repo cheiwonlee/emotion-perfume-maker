@@ -78,11 +78,13 @@ class VirtualSystemTests(unittest.TestCase):
         system = self.make()
         system.tanks.drain(3)
         self.make_perfume(system, 4)  # Sweet: Lavender 4 → Cedarwood 2 → Vanilla 8(부족) → Bergamot 2
-        self.assertTrue(wait(lambda: system.main_board.current_state == SCREEN_MOOD_SELECT
-                             and not system.main_board.needs_redraw))
+        # 부족하면 LCD 를 시작 화면으로 초기화 (발표 자료의 설계)
+        self.assertTrue(wait(lambda: system.main_board.current_state == SCREEN_START
+                             and "Refill needed:" not in str(system.lcd.screen)))
         lines = self.drain_serial(system)
         self.assertIn("PERFUME : Lavender : 4", lines)
         self.assertIn("WATER_X : 3", lines)
+        self.assertNotIn("PERFUME : Vanilla : 8", lines)  # 거절된 향료는 주입량으로 보고하지 않음
         self.assertNotIn("PERFUME : Bergamot : 2", lines)
         self.assertEqual(system.tanks.levels[1], 26)
 
