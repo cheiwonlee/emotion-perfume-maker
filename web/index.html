@@ -12,14 +12,15 @@
   <link rel="stylesheet" href="css/dashboard.css">
 </head>
 <body>
+  <div class="layout" id="layout">
+  <div class="page">
   <header class="top">
     <p class="brand">Daily Mood Perfume Maker</p>
     <div class="top-right">
       <p class="link" id="link"><span class="dot"></span><span id="link-text"></span></p>
-      <button type="button" class="ghost" id="serial-btn" hidden>USB로 연결</button>
-      <button type="button" class="ghost" id="lcd-toggle" aria-controls="lcd-window" aria-pressed="false" hidden>가상 LCD 열기</button>
+      <button type="button" class="btn btn-primary" id="serial-btn" hidden>USB로 연결</button>
       <p class="mode-label" id="mode-label" hidden></p>
-      <button type="button" class="text-btn" id="mode-btn" hidden>모드 바꾸기</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="mode-btn" hidden>모드 바꾸기</button>
     </div>
   </header>
 
@@ -52,19 +53,17 @@
   </section>
 
   <main id="dashboard" hidden>
-    <section class="status" id="status" aria-live="polite" aria-labelledby="headline">
-      <div class="status-top">
-        <p class="chip" id="chip">대기</p>
-        <ol class="stages" id="stages" aria-label="진행 단계">
-          <li data-stage="SCREEN_START">대기</li>
-          <li data-stage="SCREEN_MOODSELECT">기분 선택</li>
-          <li data-stage="SCREEN_CONFIRM">확인</li>
-          <li data-stage="SCREEN_BLENDING">주입</li>
-          <li data-stage="SCREEN_FINISH">완료</li>
-        </ol>
-      </div>
-      <div class="status-main">
-        <div>
+    <section class="status" id="status" data-tone="idle" aria-live="polite" aria-labelledby="headline">
+      <div class="status-row">
+        <p class="state" id="chip"><span class="state-dot" aria-hidden="true"></span><span id="chip-text">대기</span></p>
+        <div class="status-text">
+          <ol class="stages" id="stages" aria-label="진행 단계">
+            <li data-stage="SCREEN_START">대기</li>
+            <li data-stage="SCREEN_MOODSELECT">기분 선택</li>
+            <li data-stage="SCREEN_CONFIRM">확인</li>
+            <li data-stage="SCREEN_BLENDING">주입</li>
+            <li data-stage="SCREEN_FINISH">완료</li>
+          </ol>
           <h1 class="headline" id="headline">보드 신호를 기다리는 중</h1>
           <p class="subline" id="subline"></p>
         </div>
@@ -79,8 +78,8 @@
         <div class="panel-head">
           <h2 id="tanks-title">향료 통</h2>
           <div class="sim-controls" id="sim-controls" hidden>
-            <label class="switch"><input type="checkbox" id="auto"> <span>자동 시연</span></label>
-            <button type="button" class="text-btn" id="refill">모두 채우기</button>
+            <label class="switch"><input type="checkbox" role="switch" id="auto"><span class="switch-track" aria-hidden="true"></span><span>자동 시연</span></label>
+            <button type="button" class="btn btn-secondary btn-sm" id="refill">모두 채우기</button>
           </div>
         </div>
         <ol class="vials" id="vials"></ol>
@@ -96,18 +95,25 @@
       </section>
     </div>
   </main>
+  </div>
 
-  <!-- 가상 터치 LCD: 대시보드 위에 떠 있는 창. 제목 막대를 끌어서 옮긴다 -->
-  <div class="lcd-window" id="lcd-window" role="dialog" aria-labelledby="lcd-window-title" hidden>
-    <div class="lcd-bar" id="lcd-bar" tabindex="0" title="끌어서 옮기기 (방향키로도 옮길 수 있어요)">
-      <span class="grip" aria-hidden="true"></span>
-      <span id="lcd-window-title">터치 LCD</span>
-      <button type="button" class="lcd-close" id="lcd-close" aria-label="가상 LCD 닫기">&times;</button>
+  <!-- 가상 터치 LCD: 오른쪽 접이식 사이드 패널 (실제 기기에서 따로 떨어진 LCD 판) -->
+  <aside class="lcd-panel" id="lcd-panel" data-open="true" aria-label="가상 터치 LCD" hidden>
+    <button type="button" class="lcd-handle" id="lcd-toggle" aria-expanded="true" aria-controls="lcd-panel-body">
+      <span class="lcd-handle-icon" aria-hidden="true"></span>
+      <span class="lcd-handle-label">터치 LCD</span>
+    </button>
+    <div class="lcd-panel-body" id="lcd-panel-body">
+      <div class="lcd-panel-head">
+        <h2>터치 LCD</h2>
+        <p class="hint">메인보드에 연결된 LCD를 흉내 낸 화면이에요.</p>
+      </div>
+      <div class="unit">
+        <div class="lcd" id="lcd" role="group" aria-label="가상 터치 LCD 화면"></div>
+      </div>
+      <p class="lcd-tip" id="lcd-tip"></p>
     </div>
-    <div class="unit">
-      <div class="lcd" id="lcd" role="group" aria-label="가상 터치 LCD 화면"></div>
-    </div>
-    <p class="lcd-caption">메인보드에 연결된 터치 LCD를 흉내 낸 화면이에요.</p>
+  </aside>
   </div>
 
   <script type="module" src="js/app.js"></script>

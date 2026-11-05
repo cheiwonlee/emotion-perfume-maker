@@ -96,7 +96,7 @@ function renderStatus(s) {
 
   const d = describe(s);
   $("status").dataset.tone = d.tone;
-  $("chip").textContent = d.chip;
+  $("chip-text").textContent = d.chip;
   $("headline").textContent = d.headline;
   $("subline").innerHTML = d.sub ?? "";
 
@@ -165,7 +165,7 @@ function renderVials(s) {
         </div>
         <p class="vial-name">${esc(st.name)}</p>
         <p class="vial-state"></p>
-        ${tanks ? `<button type="button" class="text-btn" data-drain="${st.id}">비우기</button>` : ""}
+        ${tanks ? `<button type="button" class="btn btn-secondary btn-xs" data-drain="${st.id}" aria-label="${esc(st.name)} 통 비우기">비우기</button>` : ""}
       </li>`).join("");
   }
 
@@ -189,7 +189,7 @@ function renderLog(s) {
   $("today").textContent = s.today_count ? `오늘 ${s.today_count}병 완성` : "";
   if (!s.recent_blends.length) {
     $("blends").innerHTML = `<li class="empty">${s.mock
-      ? "아직 만든 향수가 없어요. 가상 LCD 창을 눌러 첫 향수를 만들어 보세요."
+      ? "아직 만든 향수가 없어요. 오른쪽 터치 LCD를 눌러 첫 향수를 만들어 보세요."
       : "아직 만든 향수가 없어요. 보드에서 기분을 고르면 여기에 기록돼요."}</li>`;
     return;
   }

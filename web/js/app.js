@@ -1,6 +1,6 @@
 // 시작점: 접속하면 모드를 고르고, 고른 소스를 화면에 연결한다.
 //   ?mode=virtual | serial | server  로 바로 들어갈 수도 있다. (python run.py는 ?mode=server로 연다)
-import { drawLcd, isLcdOpen, resetLcd, setLcdOpen, setupLcdWindow } from "./lcd-view.js";
+import { drawLcd, resetLcd, setLcdAvailable, setLcdOpen, setupLcdPanel } from "./lcd-view.js";
 import { bindControls, render, renderUnreachable, resetView, setOfflineHint } from "./render.js";
 import { SerialSource, ServerSource, VirtualSource } from "./sources.js";
 
@@ -42,17 +42,17 @@ const proxy = {
   setAuto: (...a) => source?.setAuto?.(...a),
 };
 bindControls(proxy);
-setupLcdWindow((key, mood) => proxy.press(key, mood));
-
-// 가상 LCD 창을 열어 둘지 (사용자가 닫으면 기억)
+// 가상 LCD 사이드 패널: 펼침/접힘을 기억 (기본은 펼침, 좁은 화면에서는 접힘)
 const LCD_OPEN_KEY = "perfume-maker:lcd-open";
-const lcdWanted = () => localStorage.getItem(LCD_OPEN_KEY) !== "0";
-$("lcd-toggle").addEventListener("click", () => {
-  const open = !isLcdOpen();
-  localStorage.setItem(LCD_OPEN_KEY, open ? "1" : "0");
-  setLcdOpen(open);
-});
-$("lcd-close").addEventListener("click", () => localStorage.setItem(LCD_OPEN_KEY, "0"));
+const lcdWanted = () => {
+  const saved = localStorage.getItem(LCD_OPEN_KEY);
+  return saved ? saved === "1" : window.innerWidth > 900;
+};
+setupLcdPanel(
+  (key, mood) => proxy.press(key, mood),
+  (open) => { localStorage.setItem(LCD_OPEN_KEY, open ? "1" : "0"); setLcdOpen(open); },
+);
+setLcdOpen(lcdWanted());
 
 function setUrlMode(value) {
   const url = new URL(location.href);
@@ -69,8 +69,7 @@ function showChooser() {
   $("mode-btn").hidden = true;
   $("mode-label").hidden = true;
   $("serial-btn").hidden = true;
-  $("lcd-toggle").hidden = true;
-  setLcdOpen(false);
+  setLcdAvailable(false);
   $("link").hidden = true;
   $("chooser").hidden = false;
 
@@ -107,15 +106,11 @@ async function start(nextMode, { userClick = false } = {}) {
 
   source = def.create();
   resetLcd();
-  let lcdShown = false;
   source.start((state) => {
     // 가상 LCD 는 가상 보드가 있을 때만 (실제 보드 모드에서는 진짜 LCD 를 쓴다)
     const hasMock = Boolean(state?.mock);
-    $("lcd-toggle").hidden = !hasMock;
-    if (hasMock) {
-      if (!lcdShown) { lcdShown = true; setLcdOpen(lcdWanted()); } // 모드에 들어오면 한 번 자동으로 띄움
-      drawLcd(state.mock);
-    } else if (isLcdOpen()) setLcdOpen(false);
+    if ($("lcd-panel").hidden === hasMock) setLcdAvailable(hasMock);
+    if (hasMock) drawLcd(state.mock);
     if (state) render(state);
     else renderUnreachable("서버에 연결할 수 없어요. run.py가 켜져 있는지 확인하세요.");
     if (mode === "serial") updateSerialButton(state);
