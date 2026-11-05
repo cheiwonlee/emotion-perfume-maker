@@ -10,10 +10,9 @@
     2) LoRa 로 서브보드에 [ID][sensor_id][ml] 전송
     3) 서브보드가 "DONE" 을 보낼 때까지 대기 (1초 단위로 수신 재시도)
 
-[mock 에서 추가한 부분]
-dashboard/dataCollector.py 가 읽는 시리얼 프로토콜(STATUS / MOOD / PERFUME / WATER_X / WATER_O)을
-출력한다. 현재 main.c 에는 이 printf 가 없어서, 실제 보드에서도 대시보드를 쓰려면
-README 의 "펌웨어에 추가할 printf" 를 main.c 에 넣어야 한다.
+[대시보드용 출력]
+STATUS / MOOD / PERFUME 줄은 main.c 에 추가된 printf 와 같은 형식이다.
+WATER_X / WATER_O(향료 통별 수위)는 아직 main.c 에 없어 mock 에서만 출력한다. (README 참고)
 """
 import queue
 import threading

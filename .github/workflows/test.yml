@@ -14,3 +14,11 @@ jobs:
         run: python manage.py test
       - name: Mock board tests
         run: python -m unittest discover tests
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
+      - name: Build main-board & sub-board
+        run: scripts/build_firmware.sh

@@ -14,9 +14,8 @@ C 코드의 구조체:
 """
 import struct
 
-# 메인보드 main.c 의 PACKET_ID(=121).
-# 주의: sub-board/main.c 의 Rx_ID 는 20 으로 되어 있어 실제 보드끼리는 ID가 어긋남.
-#       mock 기본값은 둘 다 121 로 맞춰 두었고, --sub-id 20 으로 실행하면 그 불일치를 재현할 수 있음.
+# 메인보드 PACKET_ID 와 서브보드 Rx_ID (둘 다 121).
+# 예전 sub-board 코드는 20 이라 통신이 안 됐다. --sub-id 20 으로 실행하면 그때 상황을 재현할 수 있다.
 PACKET_ID = 121
 
 JOB_STRUCT = struct.Struct("<if")          # int32 + float32, 리틀엔디언

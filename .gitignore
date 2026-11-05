@@ -18,3 +18,4 @@ sub-board/Release/
 Thumbs.db
 .vscode/
 .idea/
+build/

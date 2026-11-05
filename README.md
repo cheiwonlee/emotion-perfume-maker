@@ -15,6 +15,7 @@
 | [`mock/`](mock/) | (새로 추가) | 위 하드웨어 전체를 흉내 내는 **가상 보드** — 부품 없이 시스템 전체를 실행 |
 | `run.py` | (새로 추가) | 전체 실행기 — 명령 하나로 웹 서버·가상 보드·수집기를 함께 실행 |
 | `tests/` | (새로 추가) | 가상 보드 테스트 |
+| `scripts/build_firmware.sh` | (새로 추가) | CubeIDE 없이 두 펌웨어가 컴파일되는지 확인 (`arm-none-eabi-gcc` 필요) |
 
 각 브랜치의 커밋 기록은 해당 폴더 아래로 옮겨 그대로 보존했습니다. (`git log -- main-board/` 로 확인 가능)
 
@@ -49,7 +50,7 @@ python run.py
 | `python run.py --port 8001` | 웹 서버 포트 변경 |
 | `python -m mock` | 대시보드 없이 터미널에서 가상 보드만 (시리얼 출력·LoRa 로그 확인용) |
 
-그 밖의 가상 보드 옵션: `--loss 0.2` (LoRa 패킷 20% 유실), `--sub-id 20` (아래 ID 불일치 재현), `--capacity 30` (향료 통 용량 ml)
+그 밖의 가상 보드 옵션: `--loss 0.2` (LoRa 패킷 20% 유실), `--sub-id 20` (예전 코드의 LoRa ID 불일치 재현), `--capacity 30` (향료 통 용량 ml)
 
 ### 가상 보드(mock)는 어떻게 동작하나요?
 
@@ -75,8 +76,9 @@ python run.py
 ```bash
 cd dashboard && python manage.py test     # 대시보드 + 수집기 파서 (12개)
 python -m unittest discover tests         # 가상 보드 (5개)
+scripts/build_firmware.sh                 # 펌웨어 컴파일 확인 (arm-none-eabi-gcc 필요)
 ```
-GitHub 에 push 하면 Actions 에서 자동으로 실행됩니다.
+GitHub 에 push 하면 Actions 에서 세 가지 모두 자동으로 실행됩니다.
 
 ## 🔍 코드 리뷰 — 무엇을 왜 바꿨나
 
@@ -103,7 +105,10 @@ GitHub 에 push 하면 Actions 에서 자동으로 실행됩니다.
 - 포트를 아무거나 먼저 열리는 것으로 골랐습니다. STM32(ST-Link) 포트를 우선 찾고 `--serial` 로 지정할 수 있습니다.
 - 쓰이지 않던 `send_mood_update()` 를 지웠습니다.
 
-**펌웨어 (C)** — 수정하지 않았고, 확인이 필요한 점을 아래에 정리했습니다.
+**펌웨어 (C)** — 꼭 필요한 부분만 고쳤습니다.
+- **LoRa ID 불일치** → 메인보드는 `121`, 서브보드는 `20` 이라 서브보드가 모든 명령을 무시하고 메인보드는 DONE 을 끝없이 기다렸습니다. 서브보드 `Rx_ID` 를 `121` 로 맞췄습니다.
+- **대시보드용 출력이 없음** → 수집기가 기다리는 `STATUS` / `MOOD` / `PERFUME` 줄을 `main.c` 의 화면 함수, 기분 선택, 향료별 주입 함수에 추가했습니다.
+- 주입량은 `%d` 로 출력합니다. 이 프로젝트는 newlib-nano 의 float `printf` 가 꺼져 있어 `%.2f` 는 실제 보드에서 아무것도 찍히지 않습니다. (기존 디버그 줄 `rotation_ml: %.2f` 도 마찬가지)
 
 ## 🗂 기타 정리
 
@@ -111,19 +116,10 @@ GitHub 에 push 하면 Actions 에서 자동으로 실행됩니다.
 
 ## ⚠️ 실제 보드에서 확인이 필요한 점
 
-mock 을 만들면서 코드끼리 맞지 않는 부분을 발견했습니다.
-
-1. **LoRa ID 불일치** — 메인보드는 `PACKET_ID = 121`, 서브보드는 `Rx_ID = 20` 입니다. 이대로면 서브보드가 모든 패킷을 무시하고 메인보드는 DONE 을 계속 기다립니다. (`--sub-id 20` 으로 재현 가능)
-2. **대시보드용 시리얼 출력이 펌웨어에 없음** — 수집기는 `STATUS : …`, `MOOD : …`, `PERFUME : …`, `WATER_X/O : …` 줄을 기다리지만 `main-board/main.c` 에는 이 `printf` 가 없습니다. mock 은 이 줄을 출력하고 있으니, 실제 보드에서 대시보드를 쓰려면 아래처럼 추가해야 합니다.
+1. **향료 통별 수위 보고가 없음** — 대시보드는 `WATER_X : 번호`(부족) / `WATER_O : 0`(모두 충분) 줄로 재고를 표시하지만, 메인보드에는 수위 센서가 하나(`PA15`)뿐이고 이를 읽는 코드도 없습니다. 센서를 어느 통에 달았는지 정한 뒤, 값이 바뀔 때 아래처럼 출력하면 대시보드에 바로 나타납니다. (가상 보드는 이미 이렇게 출력합니다)
    ```c
-   // Draw_Screen_Start() 등 각 화면 함수 끝에
-   printf("STATUS : SCREEN_START\n");        // SCREEN_MOODSELECT / SCREEN_CONFIRM / SCREEN_BLENDING / SCREEN_FINISH
-   // ProcessTouch() 에서 기분이 정해졌을 때
-   printf("MOOD : %d\n", mood);
-   // LavenderMove() 등에서 Radio.Send() 직전에
-   printf("PERFUME : Lavender : %d\n", (int)ml);
-   // 수위 센서: 부족하면 해당 번호, 모두 충분하면 0
-   printf("WATER_X : %d\n", sensor_id);   printf("WATER_O : 0\n");
+   printf("WATER_X : %d\n", sensor_id);   // 해당 향료 부족
+   printf("WATER_O : 0\n");               // 모두 충분
    ```
-3. **서브보드 모터 2~4번 핀 미연결** — `set_coils()` 에 1번 모터 핀만 구현돼 있습니다.
-4. **레시피 표 불일치** — `dashboard/README.md` 의 레시피 표와 `main.c` 의 실제 레시피 값이 다릅니다. mock 은 `main.c` 값을 따릅니다.
+2. **서브보드 모터 2~4번 핀 미구현** — `set_coils()` 에는 1번 모터 핀만 들어 있습니다. `sub-board/README.md` 의 핀맵(모터 2: PB12·PA11·PA12·PC5 등)대로 배선했다면, 그 핀들을 CubeMX(`.ioc`)에서 GPIO 출력으로 설정한 뒤 `case 2~4` 를 채워야 합니다.
+3. 수정한 펌웨어는 컴파일까지만 확인했습니다. 보드에 올려 LoRa 통신과 대시보드 표시를 한 번 확인해 주세요.

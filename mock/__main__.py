@@ -16,7 +16,7 @@ def add_mock_arguments(parser):
     g = parser.add_argument_group("mock 옵션")
     g.add_argument("--speed", type=float, default=5.0, help="시뮬레이션 배속 (기본 5배, 1 = 실제 속도)")
     g.add_argument("--loss", type=float, default=0.0, help="LoRa 패킷 유실 확률 0~1 (기본 0)")
-    g.add_argument("--sub-id", type=int, default=121, help="서브보드 LoRa ID (실제 sub-board 코드는 20)")
+    g.add_argument("--sub-id", type=int, default=121, help="서브보드 LoRa ID (기본 121, 예전 코드의 ID 불일치를 재현하려면 20)")
     g.add_argument("--capacity", type=float, default=30.0, help="향료 통 하나의 용량 ml (기본 30)")
     g.add_argument("--auto", action="store_true", help="자동 시연 모드로 시작")
 
