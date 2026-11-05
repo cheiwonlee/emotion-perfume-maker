@@ -8,7 +8,7 @@ STM32 메인보드의 시리얼 출력을 읽어 Django 대시보드로 보내�
     MOOD : 2                      선택한 기분 번호
     PERFUME : Lavender : 4        주입한 향료와 양(ml)
     WATER_X : 3                   3번 향료 부족
-    WATER_O : 0                   모든 향료 충분
+    WATER_O : 3                   3번 향료 충분  (0 이면 모든 향료 충분)
 그 밖의 줄(디버그 printf)은 무시한다.
 
 실행
@@ -51,8 +51,8 @@ def parse_line(line: str) -> Event | None:
         return Event("perfume", "setPerfume", {"name": parts[1], "value": parts[2]})
     if key == "WATER_X" and parts[1].isdigit():
         return Event("water", "setWaterStatus", {"sensor_id": parts[1]})
-    if key == "WATER_O":
-        return Event("water", "setWaterStatus", {"sensor_id": "0"})  # 0 = 전체 충분
+    if key == "WATER_O" and parts[1].isdigit():
+        return Event("water", "setWaterStatus", {"sensor_id": parts[1], "is_low": "false"})
     return None
 
 

@@ -79,15 +79,27 @@ class AutoDemo:
             mood = random.randint(1, 8)
             print(f"[AUTO] {cycle}번째 제조 — 기분 {mood} ({protocol.MOOD_NAMES[mood]})")
             run_mood_once(self.system, mood)
-            time.sleep(3)
+            if not self._pause(3):
+                return
             if cycle % 3 == 0:  # 세 번에 한 번은 재고 부족 상황을 만든다
                 sid = random.randint(1, 4)
                 print(f"[AUTO] {protocol.PERFUMES[sid]} 통이 비었어요 (수위 센서 → 부족)")
                 self.system.tanks.drain(sid)
-                time.sleep(6)
+                if not self._pause(6):  # 자동 시연을 끄면 비운 상태 그대로 둔다
+                    return
                 print("[AUTO] 향료 통을 모두 다시 채웠어요")
                 self.system.tanks.refill()
-                time.sleep(3)
+                if not self._pause(3):
+                    return
+
+    def _pause(self, seconds) -> bool:
+        """기다리는 중에 자동 시연이 꺼지면 False"""
+        end = time.time() + seconds
+        while time.time() < end:
+            if not self.running:
+                return False
+            time.sleep(0.1)
+        return self.running
 
 
 def print_levels(system):

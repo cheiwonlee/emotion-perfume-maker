@@ -10,7 +10,9 @@ C 코드의 구조체:
 패킷 종류
     작업 지시 (메인 → 서브) : [ID(1)] + [sensor_id:int32][rotation_ml:float32]   총 9바이트
     시작 신호 (메인 → 서브) : [ID(1)] + "START" + [mood(1)]                    총 7바이트
-    완료 응답 (서브 → 메인) : [ID(1)] + "DONE"                                 총 5바이트
+    완료 응답 (서브 → 메인) : [ID(1)] + "DONE" + [주입 후 수위(1)]             총 6바이트
+    부족 응답 (서브 → 메인) : [ID(1)] + "LOW" + [sensor_id(1)]                 총 5바이트
+수위 값: 1 충분 / 0 부족 / 0xFF 센서 없음
 """
 import struct
 
@@ -45,8 +47,21 @@ def build_start_packet(packet_id: int, mood: int) -> bytes:
     return bytes([packet_id]) + b"START" + bytes([mood])
 
 
-def build_done_packet(packet_id: int) -> bytes:
-    return bytes([packet_id]) + DONE_PAYLOAD
+LEVEL_LOW, LEVEL_OK, LEVEL_UNKNOWN = 0, 1, 0xFF
+
+
+def build_done_packet(packet_id: int, level: int = LEVEL_UNKNOWN) -> bytes:
+    """sub-board RunJob(): [ID]"DONE"[주입 후 수위]"""
+    return bytes([packet_id]) + DONE_PAYLOAD + bytes([level])
+
+
+def build_low_packet(packet_id: int, sensor_id: int) -> bytes:
+    """sub-board RunJob(): 향료 부족으로 작업 거절"""
+    return bytes([packet_id]) + b"LOW" + bytes([sensor_id])
+
+
+def is_low_packet(packet: bytes, expected_id: int) -> bool:
+    return len(packet) >= 5 and packet[0] == expected_id and packet[1:4] == b"LOW"
 
 
 def is_done_packet(packet: bytes, expected_id: int) -> bool:

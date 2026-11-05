@@ -16,7 +16,8 @@ class ParseLineTests(TestCase):
         self.assertEqual(parse_line("PERFUME : Lavender : 4").data, {"name": "Lavender", "value": "4"})
         self.assertEqual(parse_line("PERFUME:Vanilla:1.5").data, {"name": "Vanilla", "value": "1.5"})
         self.assertEqual(parse_line("WATER_X : 3").data, {"sensor_id": "3"})
-        self.assertEqual(parse_line("WATER_O : 1").data, {"sensor_id": "0"})
+        self.assertEqual(parse_line("WATER_O : 1").data, {"sensor_id": "1", "is_low": "false"})
+        self.assertEqual(parse_line("WATER_O : 0").data, {"sensor_id": "0", "is_low": "false"})
 
     def test_debug_lines_are_ignored(self):
         for line in ["", "System Ready.", "Waiting for OK (Rx_ID = 121)...", "MOOD : abc", "sensor_id: 1, rotation_ml: 8.00"]:
@@ -68,6 +69,11 @@ class WaterTests(TestCase):
         self.assertTrue(services.latest_stock("Vanilla"))
         self.assertFalse(services.latest_stock("Lavender"))
 
+    def test_single_tank_recovers(self):
+        services.record_water(3)
+        services.record_water(3, is_low=False)
+        self.assertFalse(services.latest_stock("Vanilla"))
+
     def test_unknown_sensor(self):
         with self.assertRaises(ValueError):
             services.record_water(9)
@@ -82,6 +88,7 @@ class EndpointTests(TestCase):
         self.assertEqual(self.c.post("/sensor/setDeviceStatus", {"c_status": "SCREEN_BLENDING", "is_connected": "true"}).status_code, 200)
         self.assertEqual(self.c.post("/sensor/setPerfume", {"name": "Vanilla", "value": "8"}).status_code, 200)
         self.assertEqual(self.c.post("/sensor/setWaterStatus", {"sensor_id": "0"}).status_code, 200)
+        self.assertEqual(self.c.post("/sensor/setWaterStatus", {"sensor_id": "2", "is_low": "false"}).status_code, 200)
 
         state = self.c.get("/sensor/api/state").json()
         self.assertTrue(state["device"]["online"])

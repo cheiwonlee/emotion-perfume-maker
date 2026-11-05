@@ -58,7 +58,7 @@ function renderFormula(s) {
     });
     if (blend.active) foot = `${clock(blend.started_at)}에 시작했어요.`;
     else if (blend.completed) foot = `${clock(blend.finished_at)}에 완성, 모두 ${ml(blend.total_ml)}.`;
-    else foot = "향료가 부족해 중간에 멈췄어요.";
+    else foot = "중간에 멈췄어요. 향료 통과 서브보드 연결을 확인하세요.";
   } else if (s.mood && s.mood.recipe) {
     title = `${s.mood.name} 레시피`;
     rows = Object.entries(s.mood.recipe).map(([perfume, planned]) => ({ perfume, planned_ml: planned, injected_ml: null, status: "대기", cls: "" }));
@@ -116,12 +116,15 @@ function renderVials(s) {
       level = st.is_low ? 10 : 88; // 실제 보드는 '부족/충분'만 알 수 있음
       low = 16;
     }
-    li.className = `vial ${st.is_low == null ? "is-unknown" : st.is_low ? "is-low" : ""}`;
+    // 가상 보드는 통의 실제 상태를 알 수 있으므로 그 값을, 실제 보드는 마지막 센서 보고를 쓴다
+    const isLow = tank ? tank.is_low : st.is_low;
+    li.className = `vial ${isLow == null ? "is-unknown" : isLow ? "is-low" : ""}`;
     li.querySelector(".tube").style.setProperty("--low", `${low}%`);
     li.querySelector(".liquid").style.setProperty("--level", `${level}%`);
-    li.querySelector(".vial-state").textContent = st.is_low == null ? "센서 값 없음"
-      : st.is_low ? `부족${st.since ? `, ${clock(st.since)}부터` : ""}`
-      : tank ? `${ml(tank.ml)} 남음` : "충분";
+    li.querySelector(".vial-state").textContent = tank
+      ? `${isLow ? "부족, " : ""}${ml(tank.ml)} 남음`
+      : isLow == null ? "센서 값 없음"
+      : isLow ? `부족${st.since ? `, ${clock(st.since)}부터` : ""}` : "충분";
   });
 }
 
@@ -141,7 +144,7 @@ function renderLog(s) {
     return `
       <li class="blend ${b.completed ? "" : "aborted"}">
         <time datetime="${b.started_at}">${clock(b.started_at)}</time>
-        <p class="blend-mood">${esc(b.mood ?? "?")}<span>${b.completed ? esc(b.mood_label) : "향료가 부족해 만들지 못함"}</span></p>
+        <p class="blend-mood">${esc(b.mood ?? "?")}<span>${b.completed ? esc(b.mood_label) : "만들다 멈춤"}</span></p>
         <p class="blend-ml">${ml(b.total_ml)}</p>
         <div class="mix" aria-hidden="true">${mix}</div>
       </li>`;

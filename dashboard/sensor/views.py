@@ -83,7 +83,8 @@ def set_perfume(request):
 @require_POST
 def set_water_status(request):
     try:
-        services.record_water(_int(request.POST.get("sensor_id")))
+        is_low = request.POST.get("is_low", "true").lower() != "false"  # 생략하면 '부족' (WATER_X)
+        services.record_water(_int(request.POST.get("sensor_id")), is_low)
     except ValueError as e:
         return _bad(str(e))
     return _ok()

@@ -8,11 +8,9 @@
 블렌딩 중에는 향료마다
     1) 회전판 모터로 해당 향료 병 위치까지 회전
     2) LoRa 로 서브보드에 [ID][sensor_id][ml] 전송
-    3) 서브보드가 "DONE" 을 보낼 때까지 대기 (1초 단위로 수신 재시도)
+    3) 서브보드 응답 대기 — "DONE"(완료, 주입 후 수위 포함) / "LOW"(향료 부족) / 시간 초과
 
-[대시보드용 출력]
-STATUS / MOOD / PERFUME 줄은 main.c 에 추가된 printf 와 같은 형식이다.
-WATER_X / WATER_O(향료 통별 수위)는 아직 main.c 에 없어 mock 에서만 출력한다. (README 참고)
+[대시보드용 출력] STATUS / MOOD / PERFUME / WATER_X / WATER_O 줄은 main.c 의 printf 와 같은 형식이다.
 """
 import queue
 import threading
@@ -55,6 +53,8 @@ BOTTLE_ANGLES = {1: 0, 2: 90, 3: 180, 4: 270}
 
 RX_TIMEOUT_VALUE = 1000  # ms
 
+REPLY_DONE, REPLY_LOW, REPLY_TIMEOUT = "DONE", "LOW", "TIMEOUT"  # main.c SyringeReply_t
+
 
 def mood_to_touch(mood: int) -> int:
     return TOUCH_KEY[MOOD_TO_KEY[mood]]
@@ -86,8 +86,6 @@ class MainBoard:
 
         self._rx = queue.Queue()
         radio.on_rx_done = self._rx.put  # OnRxDone 콜백
-        self._water_low = {}  # 대시보드에 마지막으로 보고한 상태 (True = 부족)
-        self._shortage = {}   # 레시피보다 적게 남아 제조를 못 한 향료 {id: 그때 잔량}
 
     # ------------------------------------------------------------------ util
     def printf(self, text: str):
@@ -103,7 +101,6 @@ class MainBoard:
         self.clock.delay(2500)
         self.printf("System Ready.")
         self.printf("UI: Draw Screen 1")
-        self.report_water_levels(force=True)
 
         while True:
             # 1. 화면 그리기 & 로직 실행
@@ -130,8 +127,6 @@ class MainBoard:
                         self.process_touch(touch)
                         self.last_touch_time = self.clock.tick()
 
-            # 3. [mock 추가] 수위 센서 주기적 확인
-            self.report_water_levels()
             self.clock.delay(10)
 
     # ------------------------------------------------------------------ 터치
@@ -171,29 +166,31 @@ class MainBoard:
         recipe = RECIPES.get(mood)
         if recipe is None:
             self.printf(f"[Blending] Unknown mood: {mood}")
-        elif self._check_stock(recipe):
-            for sensor_id, ml in zip((1, 2, 3, 4), recipe):
-                self.move_and_inject(sensor_id, ml)
-            self.printf(">>> Blending Complete! <<<")
-            self.reset_motor()
-            self.current_state, self.needs_redraw = SCREEN_FINISH, True
+            self.current_state, self.needs_redraw = SCREEN_MOOD_SELECT, True
             return
 
-        # [mock 추가] 향료가 모자라면 제조하지 않고 기분 선택 화면으로 돌아감
-        self.draw_screen_refill()
-        self.clock.delay(2000)
-        self.current_state, self.needs_redraw = SCREEN_MOOD_SELECT, True
+        for sensor_id, ml in zip((1, 2, 3, 4), recipe):
+            reply = self.inject_perfume(sensor_id, ml)
+            if reply != REPLY_DONE:
+                # 향료 부족 / 서브보드 무응답 → 제조를 멈추고 기분 선택 화면으로
+                name = protocol.PERFUMES[sensor_id]
+                if reply == REPLY_LOW:
+                    self.printf(f"[Blending] {name} is LOW - stopped")
+                    self.draw_screen_message("Refill needed:", name)
+                else:
+                    self.printf("[Blending] No reply from syringe board - stopped")
+                    self.draw_screen_message("No reply from", "syringe board")
+                self.clock.delay(2500)
+                self.reset_motor()
+                self.current_state, self.needs_redraw = SCREEN_MOOD_SELECT, True
+                return
 
-    def _check_stock(self, recipe) -> bool:
-        lacking = [sid for sid, ml in zip((1, 2, 3, 4), recipe) if not self.tanks.has(sid, ml)]
-        for sid in lacking:
-            self.printf(f"[Blending] {protocol.PERFUMES[sid]} 부족 — 제조 중단")
-            self._shortage[sid] = self.tanks.levels[sid]  # 리필되기 전까지 '부족'으로 보고
-        self.report_water_levels()
-        return not lacking
+        self.printf(">>> Blending Complete! <<<")
+        self.reset_motor()
+        self.current_state, self.needs_redraw = SCREEN_FINISH, True
 
-    def move_and_inject(self, sensor_id: int, ml: float):
-        """main.c 의 LavenderMove / CedarwoodMove / VanillaMove / BergamotMove 를 하나로 합친 것"""
+    def inject_perfume(self, sensor_id: int, ml: float) -> str:
+        """main.c InjectPerfume(): 회전판 이동 → 주입 요청 → 응답 대기 → 수위 출력"""
         move_angle = BOTTLE_ANGLES[sensor_id] - self.current_angle
         if move_angle > 180:
             move_angle -= 360
@@ -202,33 +199,41 @@ class MainBoard:
         self.rotary.move_steps(int(1024 * move_angle / 90), 2)
         self.current_angle = (self.current_angle + move_angle + 360) % 360
 
-        self.printf(f"PERFUME : {protocol.PERFUMES[sensor_id]} : {ml}")  # [대시보드용]
-        packet = protocol.build_job_packet(self.packet_id, sensor_id, float(ml))
-        self.printf(f"sensor_id: {sensor_id}, rotation_ml: {float(ml):.2f}")
+        self.printf(f"PERFUME : {protocol.PERFUMES[sensor_id]} : {int(ml)}")  # [대시보드]
+        self.printf(f"sensor_id: {sensor_id}, rotation_ml: {int(ml)}")
         self._drain_rx()
-        self.radio.send(packet)
-        self.wait_for_lora_ok_blocking()
-        self.report_water_levels()
+        self.radio.send(protocol.build_job_packet(self.packet_id, sensor_id, float(ml)))
 
-    def wait_for_lora_ok_blocking(self):
-        """main.c 의 WaitForLoRaOK_Blocking(): DONE 이 올 때까지 1초씩 수신을 반복"""
-        self.printf(f"Waiting for OK (Rx_ID = {self.packet_id})...")
-        retries = 0
-        while True:
+        timeout_ms = ml * VirtualStepperMotor.ONE_CYCLE * 2 + 10000
+        reply, level = self.wait_for_syringe_reply(timeout_ms)
+
+        if reply == REPLY_LOW or (reply == REPLY_DONE and level == protocol.LEVEL_LOW):
+            self.printf(f"WATER_X : {sensor_id}")  # [대시보드]
+        elif reply == REPLY_DONE and level == protocol.LEVEL_OK:
+            self.printf(f"WATER_O : {sensor_id}")  # [대시보드]
+        return reply
+
+    def wait_for_syringe_reply(self, timeout_ms: float):
+        """main.c WaitForSyringeReply(): DONE / LOW 가 오거나 시간이 다 될 때까지 1초씩 수신 반복"""
+        self.printf(f"Waiting for reply (Rx_ID = {self.packet_id})...")
+        start = self.clock.tick()
+        while self.clock.tick() - start < timeout_ms:
             try:
                 packet = self._rx.get(timeout=RX_TIMEOUT_VALUE / 1000 / self.clock.speed)
             except queue.Empty:
-                retries += 1
-                if retries == 1 or retries % 10 == 0:  # 실제로는 1초마다 출력되지만 너무 많아서 줄임
-                    self.printf(f"RX timeout or error. Retrying... ({retries})")
                 continue
-            if protocol.is_done_packet(packet, self.packet_id):
-                self.printf("Received DONE message!")
-                return
             if packet[0] != self.packet_id:
                 self.printf(f"Received message with wrong Rx_ID: {packet[0]}")
+            elif protocol.is_done_packet(packet, self.packet_id):
+                self.printf("Received DONE message!")
+                return REPLY_DONE, packet[5] if len(packet) >= 6 else protocol.LEVEL_UNKNOWN
+            elif protocol.is_low_packet(packet, self.packet_id):
+                self.printf(f"Received LOW message (sensor {packet[4]})")
+                return REPLY_LOW, protocol.LEVEL_LOW
             else:
-                self.printf(f"Received message, but not DONE: {packet[1:]!r}")
+                self.printf("Received message, but not DONE/LOW")
+        self.printf(f"No reply within {int(timeout_ms)} ms")
+        return REPLY_TIMEOUT, protocol.LEVEL_UNKNOWN
 
     def send_start_command(self, mood: int):
         self.printf(f"LoRa: SEND START (mood={mood})")
@@ -242,30 +247,6 @@ class MainBoard:
     def _drain_rx(self):
         while not self._rx.empty():
             self._rx.get_nowait()
-
-    # ------------------------------------------------------------------ [mock 추가] 수위 센서
-    def report_water_levels(self, force: bool = False):
-        """
-        대시보드 규칙: WATER_X : n → n번 향료 부족 / WATER_O : 0 → 전체 충분.
-        상태가 바뀔 때만 보낸다.
-        """
-        for sid, level in list(self._shortage.items()):
-            if self.tanks.levels[sid] > level:  # 리필됨
-                del self._shortage[sid]
-        now = {sid: self.tanks.is_low(sid) or sid in self._shortage for sid in protocol.PERFUMES}
-        if not force and now == self._water_low:
-            return
-        recovered = any(self._water_low.get(sid) and not low for sid, low in now.items())
-        if force or recovered:
-            self.printf("WATER_O : 0")
-            for sid, low in now.items():
-                if low:
-                    self.printf(f"WATER_X : {sid}")
-        else:
-            for sid, low in now.items():
-                if low and not self._water_low.get(sid):
-                    self.printf(f"WATER_X : {sid}")
-        self._water_low = now
 
     # ------------------------------------------------------------------ 화면 (main.c Draw_Screen_*)
     def _status(self):
@@ -313,8 +294,9 @@ class MainBoard:
         self.lcd.flush("FINISH")
         self._status()
 
-    def draw_screen_refill(self):
+    def draw_screen_message(self, line1: str, line2: str):
+        """main.c Draw_Screen_Message()"""
         self.lcd.clear()
-        self.lcd.draw_string(10, 40, "Not enough")
-        self.lcd.draw_string(10, 60, "perfume! Refill.")
-        self.lcd.flush("REFILL NEEDED")
+        self.lcd.draw_string(10, 40, line1)
+        self.lcd.draw_string(10, 60, line2)
+        self.lcd.flush("MESSAGE")

@@ -45,7 +45,7 @@ dashboard/
 | `/sensor/setDeviceStatus` | POST | 수집기 | `c_status`, `is_connected` (화면 상태 없이 오면 heartbeat) |
 | `/sensor/setMood` | POST | 수집기 | `mood_code` 1~8 |
 | `/sensor/setPerfume` | POST | 수집기 | `name`, `value`(ml) |
-| `/sensor/setWaterStatus` | POST | 수집기 | `sensor_id` 0 = 전체 충분, 1~4 = 해당 향료 부족 |
+| `/sensor/setWaterStatus` | POST | 수집기 | `sensor_id` 1~4 + `is_low`(생략 시 true) / `sensor_id` 0 = 전체 충분 |
 | `/sensor/api/state` | GET | 화면 | 대시보드에 필요한 상태 전부 (JSON) |
 | `/sensor/api/mock/press` · `tank` · `auto` | POST | 화면 | 가상 LCD 누르기, 향료 통 비우기/채우기, 자동 시연 |
 
@@ -56,11 +56,11 @@ STATUS : SCREEN_BLENDING     화면 상태 (SCREEN_START / MOODSELECT / CONFIRM 
 MOOD : 2                     선택한 기분 번호
 PERFUME : Lavender : 4       넣은 향료와 양(ml)
 WATER_X : 3                  3번 향료 부족
-WATER_O : 0                  모든 향료 충분
+WATER_O : 3                  3번 향료 충분 (0 이면 모든 향료 충분)
 ```
 
 ## 테스트
 
 ```bash
-python manage.py test
+python manage.py test     # 13개
 ```

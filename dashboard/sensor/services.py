@@ -65,12 +65,16 @@ def latest_stock(perfume: str):
 
 
 @transaction.atomic
-def record_water(sensor_id: int):
-    """sensor_id 0 → 모든 향료 충분, 1~4 → 해당 향료 부족. 값이 바뀐 경우에만 기록한다."""
+def record_water(sensor_id: int, is_low: bool = True):
+    """
+    sensor_id 1~4 → 해당 향료의 수위 (is_low=True 부족 / False 충분)
+    sensor_id 0   → 모든 향료 충분
+    값이 바뀐 경우에만 기록한다.
+    """
     if sensor_id == 0:
         changes = {name: False for name in C.PERFUMES.values()}
     elif sensor_id in C.PERFUMES:
-        changes = {C.PERFUMES[sensor_id]: True}
+        changes = {C.PERFUMES[sensor_id]: is_low}
     else:
         raise ValueError(f"알 수 없는 센서 번호: {sensor_id}")
     for name, is_low in changes.items():

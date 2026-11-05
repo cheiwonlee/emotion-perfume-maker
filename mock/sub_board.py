@@ -2,8 +2,9 @@
 서브보드(주사기 모터 보드) mock — sub-board/Core/Src/main.c 의 동작을 그대로 옮긴 것.
 
 1. LoRa 로 작업 패킷 [ID][sensor_id][rotation_ml] 을 기다린다
-2. ID 와 패킷 길이가 맞으면 해당 모터를 rotation_ml × 4096 스텝 돌린다 (스텝당 1ms)
-3. 다 돌면 [ID]"DONE" 을 돌려보낸다
+2. ID 와 패킷 길이가 맞으면 작업을 받아 두고, 메인 루프에서 실행한다 (RunJob)
+3. 수위 센서가 '부족'이면 모터를 돌리지 않고 [ID]"LOW"[sensor_id] 로 거절
+4. 아니면 rotation_ml × 4096 스텝 돌린 뒤 [ID]"DONE"[주입 후 수위] 를 보낸다
 """
 import queue
 import threading
@@ -46,14 +47,26 @@ class SubBoard:
             return
 
         sensor_id, ml = protocol.parse_job_packet(packet)
-        steps = int(ml * VirtualStepperMotor.ONE_CYCLE)
-        name = protocol.PERFUMES.get(sensor_id, "?")
-        self.log(f"> Job: sensor_id={sensor_id}({name}), {ml:.2f}ml → {steps} steps")
+        self.run_job(sensor_id, ml)
 
+    def read_level(self, sensor_id: int) -> int:
+        """ReadLevel(): 가상 보드는 4개 통 모두 수위 센서가 있다고 가정"""
+        if sensor_id not in self.tanks.levels:
+            return protocol.LEVEL_UNKNOWN
+        return protocol.LEVEL_LOW if self.tanks.is_low(sensor_id) else protocol.LEVEL_OK
+
+    def run_job(self, sensor_id: int, ml: float):
+        """RunJob()"""
+        name = protocol.PERFUMES.get(sensor_id, "?")
+        if self.read_level(sensor_id) == protocol.LEVEL_LOW:
+            self.log(f"> Job refused: sensor {sensor_id}({name}) is LOW")
+            self.radio.send(protocol.build_low_packet(self.rx_id, sensor_id))
+            return
+
+        steps = int(ml * VirtualStepperMotor.ONE_CYCLE)
+        self.log(f"> Job: sensor {sensor_id}({name}), {ml:.2f}ml → {steps} steps")
         motor = self.motors.get(sensor_id)
         if motor:
             motor.move_steps(steps, self.STEP_DELAY_MS)
             self.tanks.take(sensor_id, ml)
-
-        self.radio.send(protocol.build_done_packet(self.rx_id))
-        self.log("'DONE' sent. Waiting for next command.")
+        self.radio.send(protocol.build_done_packet(self.rx_id, self.read_level(sensor_id)))

@@ -17,9 +17,15 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(packet[0], 121)
         self.assertEqual(protocol.parse_job_packet(packet), (3, 2.0))
 
-    def test_done_packet(self):
-        self.assertTrue(protocol.is_done_packet(protocol.build_done_packet(121), 121))
+    def test_reply_packets(self):
+        done = protocol.build_done_packet(121, protocol.LEVEL_OK)
+        self.assertEqual(done, bytes([121]) + b"DONE" + bytes([1]))  # sub-board RunJob() 과 같은 6바이트
+        self.assertTrue(protocol.is_done_packet(done, 121))
         self.assertFalse(protocol.is_done_packet(protocol.build_done_packet(20), 121))
+        low = protocol.build_low_packet(121, 3)
+        self.assertEqual(low, bytes([121]) + b"LOW" + bytes([3]))
+        self.assertTrue(protocol.is_low_packet(low, 121))
+        self.assertFalse(protocol.is_done_packet(low, 121))
 
     def test_touch_keys_roundtrip(self):
         for mood in range(1, 9):
@@ -65,16 +71,28 @@ class VirtualSystemTests(unittest.TestCase):
         self.assertIn("MOOD : 2", lines)
         self.assertIn("PERFUME : Lavender : 8", lines)
         self.assertIn("STATUS : SCREEN_FINISH", lines)
+        self.assertIn("WATER_O : 1", lines)  # 주입 후 수위 보고
 
-    def test_shortage_stops_blend(self):
+    def test_low_tank_stops_blend_midway(self):
+        """서브보드가 LOW 로 거절하면 거기서 멈추고, 그 전 향료는 이미 들어간 상태"""
         system = self.make()
         system.tanks.drain(3)
-        self.make_perfume(system, 4)  # Sweet 은 Vanilla 8ml 필요
-        self.assertTrue(wait(lambda: system.main_board.current_state == SCREEN_MOOD_SELECT))
+        self.make_perfume(system, 4)  # Sweet: Lavender 4 → Cedarwood 2 → Vanilla 8(부족) → Bergamot 2
+        self.assertTrue(wait(lambda: system.main_board.current_state == SCREEN_MOOD_SELECT
+                             and not system.main_board.needs_redraw))
         lines = self.drain_serial(system)
+        self.assertIn("PERFUME : Lavender : 4", lines)
         self.assertIn("WATER_X : 3", lines)
-        self.assertFalse(any(l.startswith("PERFUME") for l in lines))
+        self.assertNotIn("PERFUME : Bergamot : 2", lines)
+        self.assertEqual(system.tanks.levels[1], 26)
 
+    def test_refilled_tank_reports_ok(self):
+        system = self.make()
+        system.tanks.drain(3)
+        system.tanks.refill(3)
+        self.make_perfume(system, 1)
+        self.assertTrue(wait(lambda: system.main_board.current_state == SCREEN_FINISH))
+        self.assertIn("WATER_O : 3", self.drain_serial(system))
 
 if __name__ == "__main__":
     unittest.main()
