@@ -123,7 +123,7 @@
 
 ### 1. 필수 패키지 설치
 ```bash
-pip install django pyserial requests
+pip install -r ../requirements.txt   # django, django-cors-headers, pyserial, requests
 ```
 
 ### 2. 데이터베이스 마이그레이션
@@ -139,8 +139,11 @@ python manage.py runserver
 
 ### 4. 시리얼 데이터 수집기 실행
 ```bash
-python dataCollector.py
+python dataCollector.py                 # 실제 STM32 보드를 USB로 연결했을 때
+python dataCollector.py --mock          # 부품 없이 가상 보드로 (키보드로 터치 LCD 조작)
+python dataCollector.py --mock --auto   # 가상 보드 + 자동 시연
 ```
+> mock 에 대한 자세한 설명은 레포 루트의 README 를 참고하세요.
 
 ### 5. 브라우저에서 대시보드 접속
 ```

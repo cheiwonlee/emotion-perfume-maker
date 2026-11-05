@@ -5,16 +5,21 @@ import random, time
 import threading
 from collections import deque
 import json # JSON 사용을 위해 추가
+import argparse
+import os
+import sys
 
-# --- 설정 및 초기화 ---
-ports = serial.tools.list_ports.comports()
-
-print("=== Available COM Ports ===")
-for port in ports:
-    print(f"Port: {port.device}")
-    print(f"Description: {port.description}")
-    print(f"HWID: {port.hwid}")
-    print("---------------------------")
+# --- 실행 옵션 ---
+#   python dataCollector.py            → 실제 STM32 보드를 시리얼(USB)로 연결
+#   python dataCollector.py --mock     → 부품 없이 가상 보드(mock)로 실행
+#   python dataCollector.py --mock --auto → 가상 보드 + 자동 시연
+parser = argparse.ArgumentParser(description="STM32 시리얼 → Django 대시보드 데이터 수집기")
+parser.add_argument("--mock", action="store_true", help="실제 부품 없이 가상 하드웨어로 실행")
+parser.add_argument("--verbose", action="store_true", help="(mock) 가상 보드의 시리얼 출력도 화면에 표시")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))  # 레포 루트의 mock 패키지
+from mock.__main__ import add_mock_arguments  # noqa: E402
+add_mock_arguments(parser)
+ARGS = parser.parse_args()
 
 # --- 전역 상태 변수 ---
 SERIAL_CONNECTED = False # 시리얼 연결 상태 (False: Offline, True: Connected)
@@ -25,19 +30,44 @@ DJANGO_MOOD_URL = 'http://127.0.0.1:8000/sensor/setMood'
 DJANGO_WATER_URL = 'http://127.0.0.1:8000/sensor/setWaterStatus'
 
 ser = None
-# 시리얼 포트 찾기 및 열기
-for port in ports:
-    try:
-        # 이전에 연결에 성공한 포트를 사용하거나 적절한 포트 설정을 유지합니다.
-        ser = serial.Serial(port.device, 115200, timeout=1) 
-        SERIAL_CONNECTED = True # 연결 성공
-        print(f"Connected to {port.device}")
-        break
-    except serial.SerialException:
-        print(f"Failed to open {port.device}")
-        continue
-if not SERIAL_CONNECTED:
-    print("No serial port connected or accessible. Running in offline mode.")
+VIRTUAL_SYSTEM = None
+
+if ARGS.mock:
+    # --- 가상 하드웨어 사용 ---
+    # mock 패키지가 메인보드/서브보드/LoRa/센서를 흉내 내고,
+    # MockSerial 은 serial.Serial 과 같은 readline() 을 제공하므로 아래 코드는 그대로 동작한다.
+    from mock import create_virtual_system
+    VIRTUAL_SYSTEM = create_virtual_system(
+        speed=ARGS.speed, loss_rate=ARGS.loss, sub_id=ARGS.sub_id, capacity_ml=ARGS.capacity,
+        show_serial=ARGS.verbose,
+    )
+    ser = VIRTUAL_SYSTEM.serial
+    SERIAL_CONNECTED = True
+    print("=== MOCK MODE: 가상 보드에 연결했습니다 (실제 부품 없음) ===")
+else:
+    ports = serial.tools.list_ports.comports()
+
+    print("=== Available COM Ports ===")
+    for port in ports:
+        print(f"Port: {port.device}")
+        print(f"Description: {port.description}")
+        print(f"HWID: {port.hwid}")
+        print("---------------------------")
+
+    # 시리얼 포트 찾기 및 열기
+    for port in ports:
+        try:
+            # 이전에 연결에 성공한 포트를 사용하거나 적절한 포트 설정을 유지합니다.
+            ser = serial.Serial(port.device, 115200, timeout=1) 
+            SERIAL_CONNECTED = True # 연결 성공
+            print(f"Connected to {port.device}")
+            break
+        except serial.SerialException:
+            print(f"Failed to open {port.device}")
+            continue
+    if not SERIAL_CONNECTED:
+        print("No serial port connected or accessible. Running in offline mode.")
+        print("부품 없이 실행하려면: python dataCollector.py --mock")
 
 # 데이터 버퍼와 락
 data_buffer = deque()
@@ -158,18 +188,19 @@ def read_serial_data():
                             send_status_update(C_SCREEN_STATUS, SERIAL_CONNECTED)
 
                     # 3. PERFUME 센서 데이터 파싱 및 버퍼링 
-                    elif raw_data.startswith("PERFUME:"):
+                    elif raw_data.replace(" ", "").startswith("PERFUME:"):
                         parts = raw_data.split(':')
                         # printf(parts)
                         if len(parts) >= 3:
                             name = parts[1].strip() # 향료명
                             value = parts[2].strip()    # 주입 ml
-                            if len(data_buffer) < MAX_BUFFER_SIZE:
-                                data_buffer.append(('PERFUME', name, value))
-                            else:
-                                print(f"[WARNING] Buffer full, dropping oldest data")
-                                data_buffer.popleft()
-                                data_buffer.append(('PERFUME', name, value))
+                            with buffer_lock:
+                                if len(data_buffer) < MAX_BUFFER_SIZE:
+                                    data_buffer.append(('PERFUME', name, value))
+                                else:
+                                    print(f"[WARNING] Buffer full, dropping oldest data")
+                                    data_buffer.popleft()
+                                    data_buffer.append(('PERFUME', name, value))
                         else:
                             print(f"[ERROR] PERFUME parse failed: expected 3 parts, got {len(parts)}")
                     
@@ -269,5 +300,11 @@ sender_thread = threading.Thread(target=send_buffered_data)
 sender_thread.daemon = True 
 sender_thread.start()
 
-# 시리얼 읽기 루프 시작
-read_serial_data()
+if VIRTUAL_SYSTEM is not None:
+    # mock 모드: 시리얼 읽기는 백그라운드에서, 키보드로 가상 터치 LCD 조작
+    from mock.console import interactive
+    threading.Thread(target=read_serial_data, daemon=True).start()
+    interactive(VIRTUAL_SYSTEM, auto=ARGS.auto)
+else:
+    # 시리얼 읽기 루프 시작
+    read_serial_data()
