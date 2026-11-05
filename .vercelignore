@@ -1,0 +1,8 @@
+# Vercel 에는 web/ 만 올라가면 된다 (펌웨어·Django 는 필요 없음)
+main-board/
+sub-board/
+dashboard/
+mock/
+tests/
+scripts/
+build/
