@@ -82,7 +82,9 @@ function describe(s) {
   return {
     tone: "idle", chip: "대기",
     headline: "손님을 기다리고 있어요",
-    sub: last ? `직전 향수: ${esc(last.mood)} ${ml(last.total_ml)} (${clock(last.started_at)})` : "LCD를 누르면 기분을 고를 수 있어요.",
+    sub: !last ? "LCD를 누르면 기분을 고를 수 있어요."
+      : last.completed ? `직전 향수: ${esc(last.mood)} ${ml(last.total_ml)} (${clock(last.finished_at)} 완성)`
+      : `직전 제조: ${esc(last.mood)}, 중간에 멈춤 (${clock(last.started_at)})`,
   };
 }
 
@@ -187,7 +189,7 @@ function renderLog(s) {
   $("today").textContent = s.today_count ? `오늘 ${s.today_count}병 완성` : "";
   if (!s.recent_blends.length) {
     $("blends").innerHTML = `<li class="empty">${s.mock
-      ? "아직 만든 향수가 없어요. 위쪽의 ‘가상 LCD 열기’로 LCD를 띄워 첫 향수를 만들어 보세요."
+      ? "아직 만든 향수가 없어요. 가상 LCD 창을 눌러 첫 향수를 만들어 보세요."
       : "아직 만든 향수가 없어요. 보드에서 기분을 고르면 여기에 기록돼요."}</li>`;
     return;
   }
@@ -220,7 +222,7 @@ export function renderUnreachable(text) {
   $("link-text").textContent = text;
 }
 
-/** 향료 통·자동 시연 버튼을 소스의 동작에 연결 (LCD 는 별도 탭 lcd.html) */
+/** 향료 통·자동 시연 버튼을 소스의 동작에 연결 (LCD 창은 lcd-view.js) */
 export function bindControls(source) {
   $("auto").addEventListener("change", (e) => {
     autoHoldUntil = Date.now() + 2000; // 서버가 반영할 때까지 폴링이 예전 값으로 되돌리지 않게

@@ -36,21 +36,10 @@ export class VirtualSource extends LocalSource {
   constructor({ speed = 5 } = {}) {
     super("perfume-maker:virtual");
     this.board = new VirtualBoard((line) => this.feed(line), { speed });
-    // 별도 탭의 가상 LCD(lcd.html)와 연결: 화면을 보내 주고, 터치를 받는다
-    this.channel = new BroadcastChannel("perfume-maker");
-    this.channel.onmessage = (e) => {
-      if (e.data?.type === "press") this.press(e.data.key, e.data.mood);
-      if (e.data?.type === "hello") this.emit();
-    };
   }
   connected() { return true; }
   state() { return { ...super.state(), mock: this.board.snapshot() }; }
-  emit() {
-    const state = this.state();
-    this.onState(state);
-    this.channel.postMessage({ type: "mock", mock: state.mock });
-  }
-  stop() { super.stop(); this.board.stop(); this.channel.close(); }
+  stop() { super.stop(); this.board.stop(); }
   press(key, mood) { this.board.press(key, mood); setTimeout(() => this.emit(), 120); }
   tank(action, id) { this.board.tank(action, id); this.emit(); }
   setAuto(on) { this.board.setAuto(on); this.emit(); }

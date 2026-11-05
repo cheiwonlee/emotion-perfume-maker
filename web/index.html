@@ -17,7 +17,7 @@
     <div class="top-right">
       <p class="link" id="link"><span class="dot"></span><span id="link-text"></span></p>
       <button type="button" class="ghost" id="serial-btn" hidden>USB로 연결</button>
-      <a class="ghost" id="lcd-link" target="perfume-maker-lcd" hidden>가상 LCD 열기</a>
+      <button type="button" class="ghost" id="lcd-toggle" aria-controls="lcd-window" aria-pressed="false" hidden>가상 LCD 열기</button>
       <p class="mode-label" id="mode-label" hidden></p>
       <button type="button" class="text-btn" id="mode-btn" hidden>모드 바꾸기</button>
     </div>
@@ -96,6 +96,19 @@
       </section>
     </div>
   </main>
+
+  <!-- 가상 터치 LCD: 대시보드 위에 떠 있는 창. 제목 막대를 끌어서 옮긴다 -->
+  <div class="lcd-window" id="lcd-window" role="dialog" aria-labelledby="lcd-window-title" hidden>
+    <div class="lcd-bar" id="lcd-bar" tabindex="0" title="끌어서 옮기기 (방향키로도 옮길 수 있어요)">
+      <span class="grip" aria-hidden="true"></span>
+      <span id="lcd-window-title">터치 LCD</span>
+      <button type="button" class="lcd-close" id="lcd-close" aria-label="가상 LCD 닫기">&times;</button>
+    </div>
+    <div class="unit">
+      <div class="lcd" id="lcd" role="group" aria-label="가상 터치 LCD 화면"></div>
+    </div>
+    <p class="lcd-caption">메인보드에 연결된 터치 LCD를 흉내 낸 화면이에요.</p>
+  </div>
 
   <script type="module" src="js/app.js"></script>
 </body>
