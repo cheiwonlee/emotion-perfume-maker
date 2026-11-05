@@ -1,45 +1,70 @@
 from django.db import models
 from django.utils import timezone
 
+from .constants import MOODS
 
-# 비접촉 수위 센서 테이블 (ProximitySensor)
-# name: 센서 이름 (예: 'Lavender', 'Cedarwood')
-# value: 재고 상태 (False: 충분, True: 부족/없음)
-class ProximitySensor(models.Model):
-	name = models.CharField(max_length=20)
-	reg_date = models.DateTimeField(editable=False)
-	value = models.BooleanField()
-    
-	def save(self, *args, **kwargs):
-		# 새로운 객체인 경우에만 등록 시간을 현재 시간으로 설정
-		if not self.id:
-			self.reg_date = timezone.now()
-		return super(ProximitySensor, self).save(*args, **kwargs)
-    
-	class Meta:
-		verbose_name_plural = "Proximity Sensors"
 
-# 기기 상태 테이블 (C 프로그램의 스크린 상태 및 시리얼 연결 상태 추적)
 class DeviceStatus(models.Model):
-    # C 프로그램에서 보내는 스크린 상태 (예: 'SCREEN_START')
-    c_screen_status = models.CharField(max_length=50, default='SCREEN_START', verbose_name="C Program Status")
-    
-    # 시리얼 포트 연결 상태 (Python 스크립트가 주기적으로 업데이트)
-    is_serial_connected = models.BooleanField(default=False, verbose_name="Serial Connected")
-    
-    # 마지막 업데이트 시간
-    reg_date = models.DateTimeField(auto_now=True, verbose_name="Last Update Time")
-    
+    """
+    기기의 현재 상태 (레코드는 항상 1개).
+    예전에는 기분/주입 정보를 views.py 의 전역 변수에 담아 서버를 재시작하면 사라졌는데,
+    이제 모두 DB 에 저장한다.
+    """
+
+    screen = models.CharField("보드 화면 상태", max_length=32, blank=True, default="")
+    serial_connected = models.BooleanField("시리얼 연결", default=False)
+    mood_code = models.PositiveSmallIntegerField("선택된 기분", null=True, blank=True)
+    last_seen = models.DateTimeField("마지막 신호", null=True, blank=True)
+
     class Meta:
-        verbose_name_plural = "Device Status"
+        verbose_name = verbose_name_plural = "기기 상태"
 
-# 기분 코드 저장 테이블
-class Mood(models.Model):
-    # '행복', '편안', '집중', 또는 '2' 등
-    mood_name = models.CharField(max_length=50) 
-    reg_date = models.DateTimeField(editable=False)
+    @classmethod
+    def current(cls) -> "DeviceStatus":
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
 
-    def save(self, *args, **kwargs):
-        if not self.id:
-            self.reg_date = timezone.now()
-        return super(Mood, self).save(*args, **kwargs)
+
+class Blend(models.Model):
+    """향수 한 병을 만드는 한 번의 제조 (BLENDING 화면 진입 ~ FINISH)"""
+
+    mood_code = models.PositiveSmallIntegerField(null=True, blank=True)
+    started_at = models.DateTimeField(default=timezone.now)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    completed = models.BooleanField(default=False)  # False + finished_at 있음 = 중단됨
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    @property
+    def mood_name(self):
+        return MOODS.get(self.mood_code, ("?", ""))[0]
+
+    def __str__(self):
+        return f"{self.mood_name} @ {self.started_at:%H:%M:%S}"
+
+
+class Injection(models.Model):
+    """향료 한 종류를 주사기로 주입한 기록"""
+
+    blend = models.ForeignKey(Blend, null=True, blank=True, on_delete=models.CASCADE, related_name="injections")
+    perfume = models.CharField(max_length=20)
+    ml = models.FloatField()
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at"]
+
+
+class StockEvent(models.Model):
+    """
+    수위 센서 값이 바뀐 기록 (is_low=True → 부족).
+    예전 ProximitySensor 테이블과 같은 역할이지만, 값이 바뀔 때만 쌓는다.
+    """
+
+    perfume = models.CharField(max_length=20)
+    is_low = models.BooleanField()
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
