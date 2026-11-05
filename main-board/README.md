@@ -24,6 +24,19 @@
 
 ## 통신 (LoRa)
 - 초기화: `Radio.Init`, `Radio.SetTxConfig`, `Radio.SetRxConfig`
-- 송신 패킷(향료 준비): `[SYRINGE_ID(1)] + StepingMotor_t(sensor_id:int32, rotation_ml:float32)`
-- 완료 응답: `[Rx_ID(1)] + "DONE"` (권장: `"DONE\0"` 또는 memcmp로 검사)
-- 수신: `OnRxDone()`에서 `Buffer`에 복사 후 `lora_ok_flag` 세팅
+- 송신 패킷(향료 준비): `[PACKET_ID(1)=121] + StepingMotor_t(sensor_id:int32, rotation_ml:float32)`
+- 송신이 끝난 뒤(`OnTxDone`) 수신으로 전환해 서브보드 응답을 기다림 — `WaitForSyringeReply(timeout_ms)`
+  - `[ID] + "DONE" + [수위]` → 완료. 수위 1 이면 `WATER_O : n`, 0 이면 `WATER_X : n` 출력
+  - `[ID] + "LOW" + [sensor_id]` → 향료 부족. `WATER_X : n` 출력 후 제조 중단, LCD 에 "Refill needed" 표시
+  - 시간 초과(주입량 × 4096 × 2ms + 10초) → 제조 중단, LCD 에 "No reply" 표시
+- 중단되면 회전판을 원위치로 돌리고 기분 선택 화면으로 돌아감
+
+## 대시보드용 시리얼 출력 (UART2)
+```
+STATUS : SCREEN_START | SCREEN_MOODSELECT | SCREEN_CONFIRM | SCREEN_BLENDING | SCREEN_FINISH
+MOOD : 2
+PERFUME : Lavender : 4
+WATER_X : 3        (3번 향료 부족)
+WATER_O : 3        (3번 향료 충분)
+```
+newlib-nano 의 float `printf` 가 꺼져 있으므로 숫자는 모두 `%d` 로 출력합니다.

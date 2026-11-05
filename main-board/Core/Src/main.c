@@ -180,6 +180,7 @@ void Draw_Screen_Confirm(uint8_t mood);
 void Draw_Screen_Blending(void);
 void Draw_Screen_Finish(void);
 void ProcessTouch(uint8_t touchData);
+void Draw_Screen_Message(const char* line1, const char* line2);
 
 // Motor & Logic
 void SetMotorPins(uint8_t a, uint8_t b, uint8_t c, uint8_t d);
@@ -211,50 +212,58 @@ int _write(int file, char* ptr, int len) {
     HAL_UART_Transmit(&huart2, (uint8_t*)ptr, len, 100);
     return len;
 }
-// wait OK message
-void WaitForLoRaOK_Blocking()
+// [수정] 서브보드 응답 기다리기
+//  예전 WaitForLoRaOK_Blocking() 은 DONE 이 올 때까지 끝없이 기다렸다.
+//  이제 "LOW"(향료 부족) 응답과 시간 초과도 처리해서, 서브보드가 멈춰도 메인보드가 같이 멈추지 않는다.
+typedef enum {
+    REPLY_DONE = 0,   // 주입 완료
+    REPLY_LOW,        // 향료 부족으로 서브보드가 작업을 거절
+    REPLY_TIMEOUT     // 정해진 시간 안에 응답 없음
+} SyringeReply_t;
+
+#define LEVEL_LOW     0
+#define LEVEL_OK      1
+#define LEVEL_UNKNOWN 0xFF
+
+uint8_t g_reply_level = LEVEL_UNKNOWN;  // DONE 응답에 실려 온 주입 후 수위
+
+SyringeReply_t WaitForSyringeReply(uint32_t timeout_ms)
 {
+    uint32_t start = HAL_GetTick();
     lora_ok_flag = 0;
     lora_wait_flag = 1;
+    printf("Waiting for reply (Rx_ID = %d)...\n", Rx_ID);
 
-    printf("Waiting for OK (Rx_ID = %d)...\n", Rx_ID);
-
-    // 반복해서 수신 시도
-    while (lora_ok_flag == 0)
+    while (HAL_GetTick() - start < timeout_ms)
     {
-        Radio.Rx(RX_TIMEOUT_VALUE);  // 수신 시도
-
-        // 수신 대기
+        State = IDLE;
+        Radio.Rx(RX_TIMEOUT_VALUE);
         while (State != RX && State != RX_TIMEOUT && State != RX_ERROR) {
-            HAL_Delay(10); // CPU 사용률 낮추기
+            HAL_Delay(10);
         }
+        if (State != RX) continue;  // 타임아웃/에러 → 다시 수신
+        State = IDLE;
 
-        // 수신 성공 처리
-        if (State == RX) {
-            State = IDLE; // 다음 루프 위해 초기화
-
-            if (Buffer[0] == Rx_ID) {
-                if (BufferSize >= 5 &&
-                    strncmp((char*)&Buffer[1], "DONE", 4) == 0) { // ★ strcmp -> strncmp
-                    lora_ok_flag = 1;
-                    printf("Received DONE message!\n");
-                    break;
-                }
-                else {
-                    printf("Received message, but not DONE: %s\n", (char*)&Buffer[1]);
-                }
-            }
-            else {
-                printf("Received message with wrong Rx_ID: %d\n", Buffer[0]);
-            }
+        if (Buffer[0] != Rx_ID) {
+            printf("Received message with wrong Rx_ID: %d\n", Buffer[0]);
+            continue;
         }
-        else if (State == RX_TIMEOUT || State == RX_ERROR) {
-            printf("RX timeout or error. Retrying...\n");
-            State = IDLE;
+        if (BufferSize >= 5 && strncmp((char*)&Buffer[1], "DONE", 4) == 0) {
+            g_reply_level = (BufferSize >= 6) ? Buffer[5] : LEVEL_UNKNOWN;
+            lora_wait_flag = 0;
+            printf("Received DONE message!\n");
+            return REPLY_DONE;
         }
+        if (BufferSize >= 5 && strncmp((char*)&Buffer[1], "LOW", 3) == 0) {
+            lora_wait_flag = 0;
+            printf("Received LOW message (sensor %d)\n", Buffer[4]);
+            return REPLY_LOW;
+        }
+        printf("Received message, but not DONE/LOW\n");
     }
-
     lora_wait_flag = 0;
+    printf("No reply within %lu ms\n", (unsigned long)timeout_ms);
+    return REPLY_TIMEOUT;
 }
 
 // --- [추가] 패킷 생성 함수 (주사기 모터 코드와 호환) ---
@@ -315,78 +324,42 @@ void MoveMotorSteps(int steps, int delay_ms) {
     }
 }
 
-// home(angle = 0)
-void LavenderMove(float ml) {
-    move_angle = Lavender_angle - current_angle;
-    if (move_angle > 180) move_angle -= 360;
-    if (move_angle < -180) move_angle += 360;
+// [수정] 향료 하나 주입 — 예전 LavenderMove / CedarwoodMove / VanillaMove / BergamotMove 4개를 하나로 합침
+//  1) 회전판을 해당 향료 위치로 돌리고  2) 서브보드에 주입 요청  3) 응답을 기다린다
+const char* perfumeNames[] = { "NULL", "Lavender", "Cedarwood", "Vanilla", "Bergamot" };
+const int perfumeAngles[] = { 0, 0, 90, 180, 270 };  // Lavender_angle, Cedarwood_angle, Vanilla_angle, Bergamot_angle
 
-    MoveMotorSteps(1024 * move_angle / 90, 2);
-    current_angle = (current_angle + move_angle + 360) % 360;
-
-    // Send a ready message
-    printf("PERFUME : Lavender : %d\n", (int)ml); // [대시보드] 주입량 (newlib-nano 는 기본 설정에서 %f 를 출력하지 않아 정수로)
-    uint16_t packetSize = PrepareTxPacket(1, ml);
-    StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
-    printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
-    Radio.Send(Buffer, packetSize);
-
-    // wait ok message
-    WaitForLoRaOK_Blocking();
-}
-
-void CedarwoodMove(float ml) {
-    move_angle = Cedarwood_angle - current_angle;
+SyringeReply_t InjectPerfume(int sensor_id, float ml)
+{
+    move_angle = perfumeAngles[sensor_id] - current_angle;
     if (move_angle > 180) move_angle -= 360;
     if (move_angle < -180) move_angle += 360;
     MoveMotorSteps(1024 * move_angle / 90, 2);
     current_angle = (current_angle + move_angle + 360) % 360;
 
-    // Send a ready message
-    printf("PERFUME : Cedarwood : %d\n", (int)ml); // [대시보드] 주입량 (newlib-nano 는 기본 설정에서 %f 를 출력하지 않아 정수로)
-    uint16_t packetSize = PrepareTxPacket(2, ml);
-    StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
-    printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
+    printf("PERFUME : %s : %d\n", perfumeNames[sensor_id], (int)ml); // [대시보드] 주입량 (newlib-nano 기본 설정은 %f 를 출력하지 않아 정수로)
+    uint16_t packetSize = PrepareTxPacket(sensor_id, ml);
+    printf("sensor_id: %d, rotation_ml: %d\n", sensor_id, (int)ml);
+    State = TX;
     Radio.Send(Buffer, packetSize);
+    // [추가] 송신이 끝날 때까지 기다린 뒤 수신으로 전환 (Radio.Send 는 바로 반환되므로,
+    //  곧바로 Radio.Rx 를 부르면 아직 나가는 중인 패킷이 끊길 수 있음). OnTxDone/OnTxTimeout 이 State 를 IDLE 로 바꾼다.
+    uint32_t tx_start = HAL_GetTick();
+    while (State == TX && HAL_GetTick() - tx_start < 3500) {
+        HAL_Delay(1);
+    }
 
-    // wait ok message
-    WaitForLoRaOK_Blocking();
-}
+    // 서브보드는 1ml 에 4096 스텝, 스텝당 1ms 이상 → 넉넉하게 2배 + 10초
+    uint32_t timeout_ms = (uint32_t)(ml * ONE_CYCLE * 2) + 10000;
+    SyringeReply_t reply = WaitForSyringeReply(timeout_ms);
 
-void VanillaMove(float ml) {
-    move_angle = Vanilla_angle - current_angle;
-    if (move_angle > 180) move_angle -= 360;
-    if (move_angle < -180) move_angle += 360;
-    MoveMotorSteps(1024 * move_angle / 90, 2);
-    current_angle = (current_angle + move_angle + 360) % 360;
-
-    // Send a ready message
-    printf("PERFUME : Vanilla : %d\n", (int)ml); // [대시보드] 주입량 (newlib-nano 는 기본 설정에서 %f 를 출력하지 않아 정수로)
-    uint16_t packetSize = PrepareTxPacket(3, ml);
-    StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
-    printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
-    Radio.Send(Buffer, packetSize);
-
-    // wait ok message
-    WaitForLoRaOK_Blocking();
-}
-
-void BergamotMove(float ml) {
-    move_angle = Bergamot_angle - current_angle;
-    if (move_angle > 180) move_angle -= 360;
-    if (move_angle < -180) move_angle += 360;
-    MoveMotorSteps(1024 * move_angle / 90, 2);
-    current_angle = (current_angle + move_angle + 360) % 360;
-
-    // Send a ready message
-    printf("PERFUME : Bergamot : %d\n", (int)ml); // [대시보드] 주입량 (newlib-nano 는 기본 설정에서 %f 를 출력하지 않아 정수로)
-    uint16_t packetSize = PrepareTxPacket(4, ml);
-    StepingMotor_t* ptr = (StepingMotor_t*)(Buffer + 1);
-    printf("sensor_id: %d, rotation_ml: %.2f\n", ptr->sensor_id, ptr->rotation_ml);
-    Radio.Send(Buffer, packetSize);
-
-    // wait ok message
-    WaitForLoRaOK_Blocking();
+    // [대시보드] 향료 통 수위 (센서가 없는 통은 출력하지 않음)
+    if (reply == REPLY_LOW || (reply == REPLY_DONE && g_reply_level == LEVEL_LOW)) {
+        printf("WATER_X : %d\n", sensor_id);
+    } else if (reply == REPLY_DONE && g_reply_level == LEVEL_OK) {
+        printf("WATER_O : %d\n", sensor_id);
+    }
+    return reply;
 }
 
 // Dummy wrapper for compatibility with snippet
@@ -418,82 +391,57 @@ void MoveToAngle(int target_angle) {
     current_angle = target_angle;
 }
 
+// 기분별 레시피 (Lavender, Cedarwood, Vanilla, Bergamot) — 단위 ml
+//  dashboard/sensor/constants.py 의 RECIPES 와 같아야 한다.
+const float RECIPES[8][4] = {
+    { 0, 0, 0, 0 },   // 0: 없음
+    { 1, 1, 1, 4 },   // 1: fresh
+    { 8, 4, 2, 2 },   // 2: calm
+    { 2, 6, 2, 4 },   // 3: confident
+    { 4, 2, 8, 2 },   // 4: sweet & romantic
+    { 2, 2, 2, 10 },  // 5: energetic
+    { 4, 4, 8, 2 },   // 6: cozy
+    { 1, 4, 1, 1 },   // 7: deep & mystic
+};
+
 // --- Blending Logic: 선택된 mood에 따라 로터리 모터 + 주사기 동작 ---
 void RunBlendingProcess(uint8_t mood)
 {
     printf(">>> Blending Start: Mood %d <<<\n", mood);
 
-    // 필요하면 블렌딩 전에 홈으로
-    // ResetMotor();
-
-    switch (mood)
-    {
-    case 1: // fresh
-        LavenderMove(1);
-        CedarwoodMove(1);
-        VanillaMove(1);
-        BergamotMove(4);
-        break;
-
-    case 2: // calm
-        LavenderMove(8);
-        CedarwoodMove(4);
-        VanillaMove(2);
-        BergamotMove(2);
-        break;
-
-    case 3: // confident
-        LavenderMove(2);
-        CedarwoodMove(6);
-        VanillaMove(2);
-        BergamotMove(4);
-        break;
-
-    case 4: // sweet & romantic
-        LavenderMove(4);
-        CedarwoodMove(2);
-        VanillaMove(8);
-        BergamotMove(2);
-        break;
-
-    case 5: // energetic
-        LavenderMove(2);
-        CedarwoodMove(2);
-        VanillaMove(2);
-        BergamotMove(10);
-        break;
-
-    case 6: // cozy
-        LavenderMove(4);
-        CedarwoodMove(4);
-        VanillaMove(8);
-        BergamotMove(2);
-        break;
-
-    case 7: // deep & mystic
-        LavenderMove(1);
-        CedarwoodMove(4);
-        VanillaMove(1);
-        BergamotMove(1);
-        break;
-
-    default:
+    if (mood < 1 || mood > 7) {
         printf("[Blending] Unknown mood: %d\n", mood);
-        break;
+        currentState = SCREEN_MOOD_SELECT;
+        needsRedraw = 1;
+        return;
+    }
+
+    for (int sensor_id = 1; sensor_id <= 4; sensor_id++)
+    {
+        SyringeReply_t reply = InjectPerfume(sensor_id, RECIPES[mood][sensor_id - 1]);
+        if (reply != REPLY_DONE)
+        {
+            // [추가] 향료 부족 / 서브보드 무응답이면 제조를 멈추고 기분 선택 화면으로 돌아간다
+            if (reply == REPLY_LOW) {
+                printf("[Blending] %s is LOW - stopped\n", perfumeNames[sensor_id]);
+                Draw_Screen_Message("Refill needed:", perfumeNames[sensor_id]);
+            } else {
+                printf("[Blending] No reply from syringe board - stopped\n");
+                Draw_Screen_Message("No reply from", "syringe board");
+            }
+            HAL_Delay(2500);
+            ResetMotor();
+            currentState = SCREEN_MOOD_SELECT;
+            needsRedraw = 1;
+            return;
+        }
     }
 
     printf(">>> Blending Complete! <<<\n");
-
-    // 블렌딩 끝난 후 홈으로
-    ResetMotor();
-
-    // Finish 화면으로 전환
-    currentState = SCREEN_FINISH;
+    ResetMotor();                 // 블렌딩 끝난 후 홈으로
+    currentState = SCREEN_FINISH; // Finish 화면으로 전환
     needsRedraw = 1;
 }
-
-
-
 
 // --- LCD Functions ---
 void FlushUARTBuffer(void) {
@@ -617,6 +565,13 @@ void Draw_Screen_Finish(void) {
     LCD_DrawString(16, 40, "Your perfume", 1); HAL_Delay(50);
     LCD_DrawString(15, 60, "is now ready.", 1); HAL_Delay(50);
     LCD_DrawString(22, 104, "Tap to home", 1);
+}
+
+// [추가] 두 줄짜리 안내 화면 (향료 부족, 통신 오류 등)
+void Draw_Screen_Message(const char* line1, const char* line2) {
+    LCD_Clear();
+    LCD_DrawString(10, 40, line1, 1); HAL_Delay(50);
+    LCD_DrawString(10, 60, line2, 1);
 }
 
 void ProcessTouch(uint8_t touchData) {
