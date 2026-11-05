@@ -1,310 +1,177 @@
-import serial
-import serial.tools.list_ports
-import requests
-import random, time
-import threading
-from collections import deque
-import json # JSON 사용을 위해 추가
+"""
+STM32 메인보드의 시리얼 출력을 읽어 Django 대시보드로 보내는 수집기.
+
+    보드 printf  ──UART(USB)──►  parse_line()  ──큐──►  HTTP POST  ──►  Django
+
+보드가 보내는 줄 형식
+    STATUS : SCREEN_BLENDING      화면 상태
+    MOOD : 2                      선택한 기분 번호
+    PERFUME : Lavender : 4        주입한 향료와 양(ml)
+    WATER_X : 3                   3번 향료 부족
+    WATER_O : 0                   모든 향료 충분
+그 밖의 줄(디버그 printf)은 무시한다.
+
+실행
+    python dataCollector.py                    # 실제 보드 (포트 자동 탐색)
+    python dataCollector.py --port COM3        # 포트 직접 지정
+    부품 없이 실행하려면 레포 루트에서  python run.py
+"""
 import argparse
-import os
-import sys
+import queue
+import threading
+import time
+from dataclasses import dataclass
 
-# --- 실행 옵션 ---
-#   python dataCollector.py            → 실제 STM32 보드를 시리얼(USB)로 연결
-#   python dataCollector.py --mock     → 부품 없이 가상 보드(mock)로 실행
-#   python dataCollector.py --mock --auto → 가상 보드 + 자동 시연
-parser = argparse.ArgumentParser(description="STM32 시리얼 → Django 대시보드 데이터 수집기")
-parser.add_argument("--mock", action="store_true", help="실제 부품 없이 가상 하드웨어로 실행")
-parser.add_argument("--verbose", action="store_true", help="(mock) 가상 보드의 시리얼 출력도 화면에 표시")
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))  # 레포 루트의 mock 패키지
-from mock.__main__ import add_mock_arguments  # noqa: E402
-add_mock_arguments(parser)
-ARGS = parser.parse_args()
+import requests
 
-# --- 전역 상태 변수 ---
-SERIAL_CONNECTED = False # 시리얼 연결 상태 (False: Offline, True: Connected)
-C_SCREEN_STATUS = 'N/A' # C 프로그램에서 보낸 마지막 스크린 상태 (초기값)
-DJANGO_STATUS_URL = 'http://127.0.0.1:8000/sensor/setDeviceStatus' # Django 상태 업데이트 URL
-DJANGO_MOOD_URL = 'http://127.0.0.1:8000/sensor/setMood'
-# [추가] WATER 센서 데이터 전송 URL
-DJANGO_WATER_URL = 'http://127.0.0.1:8000/sensor/setWaterStatus'
+DEFAULT_SERVER = "http://127.0.0.1:8000"
+HEARTBEAT_SECONDS = 1.0
 
-ser = None
-VIRTUAL_SYSTEM = None
 
-if ARGS.mock:
-    # --- 가상 하드웨어 사용 ---
-    # mock 패키지가 메인보드/서브보드/LoRa/센서를 흉내 내고,
-    # MockSerial 은 serial.Serial 과 같은 readline() 을 제공하므로 아래 코드는 그대로 동작한다.
-    from mock import create_virtual_system
-    VIRTUAL_SYSTEM = create_virtual_system(
-        speed=ARGS.speed, loss_rate=ARGS.loss, sub_id=ARGS.sub_id, capacity_ml=ARGS.capacity,
-        show_serial=ARGS.verbose,
-    )
-    ser = VIRTUAL_SYSTEM.serial
-    SERIAL_CONNECTED = True
-    print("=== MOCK MODE: 가상 보드에 연결했습니다 (실제 부품 없음) ===")
-else:
-    ports = serial.tools.list_ports.comports()
+# --------------------------------------------------------------------------- 파싱
+@dataclass(frozen=True)
+class Event:
+    kind: str      # status / mood / perfume / water
+    endpoint: str  # Django URL (sensor/ 뒤)
+    data: dict     # POST 로 보낼 값
 
-    print("=== Available COM Ports ===")
-    for port in ports:
-        print(f"Port: {port.device}")
-        print(f"Description: {port.description}")
-        print(f"HWID: {port.hwid}")
-        print("---------------------------")
 
-    # 시리얼 포트 찾기 및 열기
-    for port in ports:
+def parse_line(line: str) -> Event | None:
+    """보드가 보낸 한 줄을 Event 로 바꾼다. 관심 없는 줄이면 None."""
+    parts = [p.strip() for p in line.strip().split(":")]
+    if len(parts) < 2 or not parts[1]:
+        return None
+    key = parts[0].upper()
+
+    if key == "STATUS":
+        return Event("status", "setDeviceStatus", {"c_status": parts[1], "is_connected": "true"})
+    if key == "MOOD" and parts[1].isdigit():
+        return Event("mood", "setMood", {"mood_code": parts[1]})
+    if key == "PERFUME" and len(parts) >= 3:
+        return Event("perfume", "setPerfume", {"name": parts[1], "value": parts[2]})
+    if key == "WATER_X" and parts[1].isdigit():
+        return Event("water", "setWaterStatus", {"sensor_id": parts[1]})
+    if key == "WATER_O":
+        return Event("water", "setWaterStatus", {"sensor_id": "0"})  # 0 = 전체 충분
+    return None
+
+
+# --------------------------------------------------------------------------- 수집기
+class Collector:
+    """
+    스레드 3개로 동작한다.
+      reader    : 시리얼에서 한 줄씩 읽어 이벤트 큐에 넣는다
+      sender    : 큐에서 꺼내 순서대로 서버에 보낸다 (순서가 바뀌면 '어느 제조의 주입인지'가 틀어지므로)
+      heartbeat : 1초마다 '연결돼 있음' 신호를 보낸다 (끊기면 대시보드가 오프라인으로 표시)
+    """
+
+    def __init__(self, ser, server: str = DEFAULT_SERVER, log=print):
+        self.ser = ser
+        self.server = server.rstrip("/")
+        self.log = log
+        self.connected = ser is not None
+        self.events: "queue.Queue[Event]" = queue.Queue(maxsize=200)
+        self.http = requests.Session()
+        self._server_down = False
+
+    def post(self, endpoint: str, data: dict):
         try:
-            # 이전에 연결에 성공한 포트를 사용하거나 적절한 포트 설정을 유지합니다.
-            ser = serial.Serial(port.device, 115200, timeout=1) 
-            SERIAL_CONNECTED = True # 연결 성공
-            print(f"Connected to {port.device}")
-            break
-        except serial.SerialException:
-            print(f"Failed to open {port.device}")
-            continue
-    if not SERIAL_CONNECTED:
-        print("No serial port connected or accessible. Running in offline mode.")
-        print("부품 없이 실행하려면: python dataCollector.py --mock")
+            r = self.http.post(f"{self.server}/sensor/{endpoint}", data=data, timeout=2)
+            r.raise_for_status()
+            if self._server_down:
+                self.log("[수집기] 서버 연결 복구")
+            self._server_down = False
+            return True
+        except requests.RequestException as e:
+            if not self._server_down:  # 같은 오류를 1초마다 찍지 않도록 한 번만
+                self.log(f"[수집기] 서버로 보내지 못함: {e}")
+            self._server_down = True
+            return False
 
-# 데이터 버퍼와 락
-data_buffer = deque()
-buffer_lock = threading.Lock()
-MAX_BUFFER_SIZE = 10  # 최대 10개까지 버퍼링
+    def handle_line(self, line: str):
+        event = parse_line(line)
+        if event is None:
+            return
+        try:
+            self.events.put_nowait(event)
+        except queue.Full:
+            self.log("[수집기] 이벤트가 너무 많이 밀려 하나를 버렸어요")
 
-# --- 상태 전송 함수 ---
-def send_status_update(c_status, is_connected):
-    """Django 서버에 현재 C 상태 및 시리얼 연결 상태를 전송"""
-    try:
-        payload = {
-            'c_status': c_status,
-            'is_connected': str(is_connected).lower()
-        }
-        # POST 요청을 JSON 형식으로 전송
-        response = requests.post(DJANGO_STATUS_URL, data=payload, timeout=0.5) 
-        response.raise_for_status() # HTTP 오류 발생 시 예외 발생
-        # print(f"[STATUS SENT] C:{c_status}, Conn:{is_connected} -> OK")
-    except requests.exceptions.RequestException as e:
-        # Django 서버가 꺼져있거나 네트워크 오류 시
-        print(f"[STATUS ERROR] Failed to send status to Django: {e}")
+    # --- threads -----------------------------------------------------------
+    def _reader(self):
+        try:
+            from serial import SerialException
+            errors = (SerialException, OSError)
+        except ImportError:  # 가상 시리얼만 쓸 때는 pyserial 이 없어도 된다
+            errors = (OSError,)
 
-# --- 데이터 전송 함수 ---
-def send_buffered_data():
-    # 별도 스레드에서 버퍼링된 데이터를 전송
-    global data_buffer
-    
-    while True:
-        time.sleep(0.1)  # 100ms마다 확인
-        
-        with buffer_lock:
-            if not data_buffer:
-                continue
-            
-            # 버퍼에서 데이터 꺼내기 
-            data_type, name, value = data_buffer.popleft() 
-
-            url = None
-            payload = None
-            
+        while self.connected:
             try:
-                if data_type == 'MOOD':
-                    # 기분 코드는 /sensor/setMood 엔드포인트로 전송
-                    url = "http://127.0.0.1:8000/sensor/setMood"
-                    # views.py의 setMood 함수는 'mood_name' 필드를 기대함
-                    payload = {'mood_code': value}
-                elif data_type == 'PERFUME':
-                    url = "http://127.0.0.1:8000/sensor/setPerfume"
-                    payload = {'name': name, 'value': value}
-                    # 센서 데이터는 /sensor/setPerume 엔드포인트로 전송
-                elif data_type == 'WATER':
-                    # sensor_id = buffer_data[1]
-                    sensor_id = name
-                    url = "http://127.0.0.1:8000/sensor/setWaterStatus"
-                    payload = {'sensor_id': sensor_id}
-                else:
-                    continue # 알 수 없는 타입 무시
-                
-                response = requests.post(url, data=payload, timeout=0.5)
-                print(f"[SENT][{data_type}] {payload} -> {response.json()}")
-                response.raise_for_status()
-            except requests.exceptions.RequestException as e:
-                print(f"[ERROR] {data_type} data send failed: {e}")
+                raw = self.ser.readline()
+            except errors as e:
+                self.log(f"[수집기] 시리얼 연결이 끊겼어요: {e}")
+                self.connected = False
+                break
+            if raw:
+                self.handle_line(raw.decode("utf-8", errors="replace"))
+
+    def _sender(self):
+        while True:
+            event = self.events.get()
+            if self.post(event.endpoint, event.data):
+                self.log(f"[수집기] {event.kind:<7} {event.data}")
+
+    def _heartbeat(self):
+        while True:
+            self.post("setDeviceStatus", {"is_connected": str(self.connected).lower()})
+            time.sleep(HEARTBEAT_SECONDS)
+
+    def start(self):
+        for target in (self._sender, self._heartbeat):
+            threading.Thread(target=target, daemon=True).start()
+        if self.ser is not None:
+            threading.Thread(target=self._reader, daemon=True).start()
+        return self
 
 
+# --------------------------------------------------------------------------- 실제 시리얼 포트
+def open_serial(port: str | None = None, baud: int = 115200):
+    """포트를 지정하지 않으면 STM32(ST-Link) 처럼 보이는 포트를 먼저 시도한다."""
+    import serial
+    import serial.tools.list_ports
 
-# --- 기분 읽기 함수 ---
-def send_mood_update(mood_code):
-    """
-    C 프로그램에서 보낸 MOOD 코드를 Django 서버로 전송합니다.
-    """
-    try:
-        data = {
-            'mood_code': mood_code
-        }
-        # POST 요청으로 MOOD 코드 전송
-        response = requests.post(DJANGO_MOOD_URL, data=data)
-        
-        if response.status_code == 200:
-            print(f"[SERVER] Mood update successful: {mood_code}")
-        else:
-            print(f"[SERVER] Mood update failed. Code: {response.status_code}")
-            
-    except requests.exceptions.RequestException as e:
-        print(f"[SERVER] Error connecting to Django server for mood: {e}")
+    if port:
+        return serial.Serial(port, baud, timeout=1)
 
-
-
-
-# --- 시리얼 읽기 함수 ---
-def read_serial_data():
-    # 시리얼 포트에서 데이터를 읽고 버퍼에 저장
-    global ser, SERIAL_CONNECTED, C_SCREEN_STATUS
-    
-    status_update_timer = time.time() # 상태 업데이트 주기 타이머
-    STATUS_UPDATE_INTERVAL = 1.0 # 1초마다 상태를 Django로 전송
-
-    while True:
+    # hwid 가 'n/a' 인 포트는 메인보드에 붙은 옛 시리얼(예: /dev/ttyS0)이라 보드가 아니다 → USB 장치만 본다
+    ports = [p for p in serial.tools.list_ports.comports() if p.hwid and p.hwid != "n/a"]
+    ports.sort(key=lambda p: 0 if any(k in f"{p.description} {p.hwid}".upper() for k in ("STM", "ST-LINK", "STLINK", "0483")) else 1)
+    for p in ports:
         try:
-            if ser and SERIAL_CONNECTED:
-                # 1. 시리얼 데이터 읽기
-                raw_data = ser.readline().decode('utf-8').strip()
-                
-                
-                if raw_data:
-                    
-                    # 2. 프로그램 상태 (STATUS) 파싱 및 업데이트
-                    # Touch LCD 함수에서 로그를 보냄.
-                    # Draw_Screen_Start(), Draw_Screen_MoodSelect(), Draw_Screen_MoodSelect()
-                    # , Draw_Screen_Blending(), Draw_Screen_Finish().
-                    # 필요 시 추가 예정
-                    if raw_data.startswith("STATUS : "):
-                        new_status = raw_data.split(' : ')[1].strip()
-                        if new_status != C_SCREEN_STATUS:
-                            C_SCREEN_STATUS = new_status
-                            print(f"[PARSED][STATUS] C_SCREEN_STATUS={C_SCREEN_STATUS}")
-                            # 상태가 바뀔 때마다 즉시 전송
-                            send_status_update(C_SCREEN_STATUS, SERIAL_CONNECTED)
+            ser = serial.Serial(p.device, baud, timeout=1)
+            print(f"[수집기] {p.device} ({p.description}) 에 연결했어요")
+            return ser
+        except serial.SerialException:
+            continue
+    return None
 
-                    # 3. PERFUME 센서 데이터 파싱 및 버퍼링 
-                    elif raw_data.replace(" ", "").startswith("PERFUME:"):
-                        parts = raw_data.split(':')
-                        # printf(parts)
-                        if len(parts) >= 3:
-                            name = parts[1].strip() # 향료명
-                            value = parts[2].strip()    # 주입 ml
-                            with buffer_lock:
-                                if len(data_buffer) < MAX_BUFFER_SIZE:
-                                    data_buffer.append(('PERFUME', name, value))
-                                else:
-                                    print(f"[WARNING] Buffer full, dropping oldest data")
-                                    data_buffer.popleft()
-                                    data_buffer.append(('PERFUME', name, value))
-                        else:
-                            print(f"[ERROR] PERFUME parse failed: expected 3 parts, got {len(parts)}")
-                    
-                    # 4. MOOD 
-                    elif raw_data.startswith("MOOD : "):
-                        parts = raw_data.split(' : ')
-                        if len(parts) == 2:
-                            mood_name = parts[1].strip()
-                            print(f"[PARSED][MOOD] mood_name={mood_name}")
-                            
-                            with buffer_lock:
-                                if len(data_buffer) < MAX_BUFFER_SIZE:
-                                    # (type, name, value) 형식으로 저장. name은 None
-                                    data_buffer.append(('MOOD', None, mood_name)) 
-                                else:
-                                    print(f"[WARNING] Buffer full, dropping oldest data")
-                                    data_buffer.popleft() 
-                                    data_buffer.append(('MOOD', None, mood_name))
-                        else:
-                            print(f"[ERROR] MOOD parse failed: expected 2 parts, got {len(parts)}")
 
-                    # 5. PROX (수위 감지 여부)
-                    elif raw_data.startswith("WATER_X : "):
-                        parts = raw_data.split(' : ')
-                        if len(parts) == 2:
-                            sensor_id_str = parts[1].strip()
-                            if sensor_id_str.isdigit():
-                                sensor_id = int(sensor_id_str)
-                                
-                                with buffer_lock:
-                                    if len(data_buffer) < MAX_BUFFER_SIZE:
-                                        # 버퍼에 ('WATER', 센서번호) 저장
-                                        data_buffer.append(('WATER', sensor_id, None)) 
-                                    else:
-                                        print(f"[WARNING] Buffer full, dropping oldest data")
-                                        data_buffer.popleft()
-                                        data_buffer.append(('WATER', sensor_id, None))
-                    
-                # [새로운 로직 추가] 6. WATER_O (수위 감지 여부 - 충분)
-                    elif raw_data.startswith("WATER_O : "):
-                        parts = raw_data.split(' : ')
-                        if len(parts) == 2:
-                            sensor_id_str = parts[1].strip() # 1~4 중 하나가 들어오지만
-                            if sensor_id_str.isdigit():
-                                 # Django views.py의 setWaterStatus 함수에 따라, ID 0을 보내면 
-                                # 모든 향료가 '충분' 상태로 업데이트됩니다.
-                                sensor_id_to_send = 0 
+def main():
+    parser = argparse.ArgumentParser(description="STM32 시리얼 → Django 대시보드 수집기")
+    parser.add_argument("--port", help="시리얼 포트 (예: COM3, /dev/ttyACM0). 생략하면 자동 탐색")
+    parser.add_argument("--server", default=DEFAULT_SERVER, help=f"Django 서버 주소 (기본 {DEFAULT_SERVER})")
+    args = parser.parse_args()
 
-                                with buffer_lock:
-                                    if len(data_buffer) < MAX_BUFFER_SIZE:
-                                        # 버퍼에 ('WATER', 0, None) 저장
-                                        data_buffer.append(('WATER', sensor_id_to_send, None)) 
-                                    else:
-                                        print(f"[WARNING] Buffer full, dropping oldest data")
-                                        data_buffer.popleft()
-                                        data_buffer.append(('WATER', sensor_id_to_send, None))
-                            else:
-                                print(f"[ERROR] WATER_O parse failed: expected 2 parts, got {len(parts)}")
-    
-                        
-                
-                #  주기적으로 시리얼 연결 상태 전송 (연결 확인 목적)
-                if time.time() - status_update_timer >= STATUS_UPDATE_INTERVAL:
-                    send_status_update(C_SCREEN_STATUS, SERIAL_CONNECTED)
-                    status_update_timer = time.time()
-                
-            else:
-                # 시리얼 연결이 끊어졌거나 처음부터 연결되지 않았을 경우
-                if SERIAL_CONNECTED:
-                    # 연결이 끊어진 경우
-                    SERIAL_CONNECTED = False
-                    print("[SERIAL] Connection lost.")
-                    # 연결 끊김 상태를 즉시 전송
-                    send_status_update(C_SCREEN_STATUS, SERIAL_CONNECTED)
-                
-                # 비연결 상태에서는 1초마다 상태 전송을 시도합니다.
-                if time.time() - status_update_timer >= STATUS_UPDATE_INTERVAL:
-                    send_status_update(C_SCREEN_STATUS, SERIAL_CONNECTED)
-                    status_update_timer = time.time()
-                    
-                time.sleep(1) # 시리얼 연결이 없으면 1초 대기
-                
-        except serial.SerialException as se:
-            print(f"[ERROR] Serial device communication error: {se}")
-            if SERIAL_CONNECTED:
-                SERIAL_CONNECTED = False
-                print("[SERIAL] Connection status changed to disconnected.")
-                send_status_update(C_SCREEN_STATUS, SERIAL_CONNECTED)
-            time.sleep(1) 
-        except Exception as e:
-            print(f"[ERROR] Unexpected error in read_serial_data: {e}")
-            time.sleep(1) 
+    ser = open_serial(args.port)
+    if ser is None:
+        print("[수집기] 연결할 시리얼 포트가 없어요. 보드 USB 연결을 확인하거나, 부품 없이 보려면 레포 루트에서 `python run.py`")
+    Collector(ser, args.server).start()
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        pass
 
-# --- 메인 실행 ---
-# 데이터 전송 스레드 시작
-sender_thread = threading.Thread(target=send_buffered_data)
-sender_thread.daemon = True 
-sender_thread.start()
 
-if VIRTUAL_SYSTEM is not None:
-    # mock 모드: 시리얼 읽기는 백그라운드에서, 키보드로 가상 터치 LCD 조작
-    from mock.console import interactive
-    threading.Thread(target=read_serial_data, daemon=True).start()
-    interactive(VIRTUAL_SYSTEM, auto=ARGS.auto)
-else:
-    # 시리얼 읽기 루프 시작
-    read_serial_data()
+if __name__ == "__main__":
+    main()
