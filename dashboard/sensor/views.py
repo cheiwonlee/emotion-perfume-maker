@@ -7,8 +7,8 @@
 """
 import json
 
-from django.http import JsonResponse
-from django.shortcuts import render
+from django.conf import settings
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
@@ -34,7 +34,14 @@ def _int(value):
 @require_GET
 @ensure_csrf_cookie  # 화면의 가상 LCD 버튼이 POST 할 때 쓸 CSRF 쿠키
 def index(request):
-    return render(request, "sensor/dashboard.html")
+    """
+    web/index.html 을 그대로 내려준다. (GitHub Pages 에 올리는 것과 같은 파일)
+    - <base href="/static/"> : css/js 상대 경로가 Django static 에서 찾아지도록
+    - <meta name="api-base"> : 화면이 '로컬 서버' 모드를 쓸 수 있다는 표시
+    """
+    html = (settings.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    inject = f'<head>\n  <base href="{settings.STATIC_URL}">\n  <meta name="api-base" content="/sensor/">'
+    return HttpResponse(html.replace("<head>", inject, 1))
 
 
 @require_GET

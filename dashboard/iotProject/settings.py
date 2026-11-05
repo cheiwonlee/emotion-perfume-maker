@@ -40,7 +40,7 @@ ROOT_URLCONF = "iotProject.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [],  # 템플릿 대신 web/index.html 을 그대로 내려준다 (sensor/views.py index)
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -66,8 +66,10 @@ TIME_ZONE = "Asia/Seoul"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
+# 화면(HTML/CSS/JS)은 레포 루트의 web/ 하나를 GitHub Pages·Vercel 과 같이 쓴다.
+WEB_DIR = BASE_DIR.parent / "web"
+STATIC_URL = "/static/"
+STATICFILES_DIRS = [WEB_DIR]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

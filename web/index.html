@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daily Mood Perfume Maker</title>
+  <meta name="description" content="기분에 맞춰 향수를 섞는 IoT 향수 제조기의 실시간 대시보드. 부품 없이 브라우저에서 가상 보드로 체험할 수 있어요.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M11 3h10v4h-2v4.5c4 1.4 7 5 7 9.5a10 10 0 0 1-20 0c0-4.5 3-8.1 7-9.5V7h-2z' fill='%238d7bb8'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+  <header class="top">
+    <p class="brand">Daily Mood Perfume Maker</p>
+    <div class="top-right">
+      <p class="link" id="link"><span class="dot"></span><span id="link-text"></span></p>
+      <button type="button" class="ghost" id="serial-btn" hidden>USB로 연결</button>
+      <p class="mode-label" id="mode-label" hidden></p>
+      <button type="button" class="text-btn" id="mode-btn" hidden>모드 바꾸기</button>
+    </div>
+  </header>
+
+  <section class="chooser" id="chooser" hidden aria-labelledby="chooser-title">
+    <h1 id="chooser-title">어떤 보드와 연결할까요?</h1>
+    <p class="chooser-lead">나중에 위쪽의 ‘모드 바꾸기’로 언제든 다시 고를 수 있어요.</p>
+    <ul class="modes">
+      <li>
+        <button type="button" class="mode" data-mode="virtual">
+          <span class="mode-name">가상 보드</span>
+          <span class="mode-desc">부품 없이 브라우저 안에서 메인보드·서브보드·센서를 흉내 내요. 화면의 LCD를 눌러 향수를 만들어 보세요.</span>
+          <span class="mode-note"></span>
+        </button>
+      </li>
+      <li>
+        <button type="button" class="mode" data-mode="serial">
+          <span class="mode-name">실제 보드 (USB)</span>
+          <span class="mode-desc">메인보드를 USB로 연결하면 시리얼 출력을 브라우저가 바로 읽어요. 서버가 필요 없어요.</span>
+          <span class="mode-note"></span>
+        </button>
+      </li>
+      <li>
+        <button type="button" class="mode" data-mode="server">
+          <span class="mode-name">로컬 서버</span>
+          <span class="mode-desc"><code>python run.py</code>로 띄운 서버의 상태를 보여 줘요. 제조 기록이 서버 DB에 남아요.</span>
+          <span class="mode-note"></span>
+        </button>
+      </li>
+    </ul>
+  </section>
+
+  <main id="dashboard" hidden>
+    <section class="now" aria-live="polite">
+      <div class="mood">
+        <p class="mood-label" id="mood-label"></p>
+        <h1 class="mood-word" id="mood-word">아직 고른 기분이 없어요</h1>
+        <p class="activity" id="activity">보드 신호를 기다리는 중</p>
+      </div>
+
+      <div class="formula" id="formula">
+        <h2 class="formula-title" id="formula-title">레시피</h2>
+        <table>
+          <thead><tr><th scope="col">향료</th><th scope="col" class="num">레시피</th><th scope="col" class="num">주입</th><th scope="col">상태</th></tr></thead>
+          <tbody id="formula-rows"></tbody>
+        </table>
+        <p class="formula-foot" id="formula-foot"></p>
+      </div>
+    </section>
+
+    <section class="organ" aria-labelledby="organ-title">
+      <div class="section-head">
+        <h2 id="organ-title">향료 통</h2>
+        <p class="hint" id="organ-hint">수위 센서가 잔량 부족을 감지하면 빨간색으로 표시돼요.</p>
+      </div>
+      <ol class="vials" id="vials"></ol>
+    </section>
+
+    <section class="lower">
+      <div class="log">
+        <div class="section-head">
+          <h2>제조 기록</h2>
+          <p class="hint" id="today"></p>
+        </div>
+        <ol class="blends" id="blends"></ol>
+      </div>
+
+      <div class="device" id="device" hidden>
+        <div class="section-head">
+          <h2>가상 터치 LCD</h2>
+          <p class="hint">실제 보드 대신 이 화면을 눌러 조작해요.</p>
+        </div>
+        <div class="unit">
+          <div class="lcd" id="lcd" role="group" aria-label="가상 터치 LCD"></div>
+        </div>
+        <div class="controls">
+          <label class="switch"><input type="checkbox" id="auto"> <span>자동 시연</span></label>
+          <button type="button" class="ghost" id="refill">향료 통 모두 채우기</button>
+        </div>
+        <p class="hint" id="speed"></p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

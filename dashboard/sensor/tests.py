@@ -114,3 +114,6 @@ class EndpointTests(TestCase):
         r = self.c.get("/sensor/")
         self.assertEqual(r.status_code, 200)
         self.assertIn("csrftoken", r.cookies)
+        html = r.content.decode()
+        self.assertIn('<meta name="api-base" content="/sensor/">', html)  # 로컬 서버 모드 켜짐
+        self.assertIn('<base href="/static/">', html)

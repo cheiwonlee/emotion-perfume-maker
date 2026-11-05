@@ -73,7 +73,7 @@ def main():
         sys.exit(f"{args.port}번 포트를 이미 쓰고 있어요. 다른 실행을 끄거나 --port 8001 처럼 바꿔 주세요.")
 
     start_web_server(args.port)
-    url = f"http://127.0.0.1:{args.port}/sensor/"
+    url = f"http://127.0.0.1:{args.port}/sensor/?mode=server"
 
     from dataCollector import Collector, open_serial
 

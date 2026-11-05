@@ -1,6 +1,7 @@
-# Web Dashboard
+# Dashboard Server (Django)
 
-향수 제조기의 상태를 실시간으로 보여 주는 Django 웹 대시보드와, 보드의 시리얼 출력을 서버로 옮기는 수집기입니다.
+보드 이벤트를 받아 DB 에 쌓고 API 로 내주는 Django 서버와, 보드의 시리얼 출력을 서버로 옮기는 수집기입니다.
+화면(HTML·CSS·JS)은 레포 루트의 [`web/`](../web/) 에 있고, 이 서버는 그 파일을 그대로 내려줍니다. (`<meta name="api-base">` 를 넣어 화면이 '로컬 서버' 모드를 쓸 수 있게 함)
 전체 실행 방법은 [레포 루트 README](../README.md) 를 보세요. (`python run.py` 한 줄이면 됩니다)
 
 ## 화면에서 볼 수 있는 것
@@ -24,9 +25,8 @@ dashboard/
 │   ├── services.py           이벤트 → DB 반영, 대시보드 상태 조회
 │   ├── views.py / urls.py    API
 │   ├── mock_bridge.py        가상 보드와 연결 (run.py 로 실행할 때만)
-│   ├── templates/sensor/dashboard.html
 │   └── tests.py
-└── static/                   dashboard.css, dashboard.js
+└── (화면은 ../web/ — index.html, css/, js/)
 ```
 
 ## 데이터 모델
